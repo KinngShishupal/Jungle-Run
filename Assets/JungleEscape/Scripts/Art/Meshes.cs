@@ -370,7 +370,11 @@ namespace JungleEscape
                 uvs.Add(new Vector2(0.5f + Mathf.Cos(a) * 0.5f, 0.5f + Mathf.Sin(a) * 0.5f));
             }
             for (int s = 1; s <= sides; s++) { tris.Add(0); tris.Add(s + 1); tris.Add(s); }
-            return Finish("Disc", verts, norms, uvs, tris, true);
+            var m = Finish("Disc", verts, norms, uvs, tris, true);
+            var cols = new List<Color>(verts.Count);
+            for (int i = 0; i < verts.Count; i++) cols.Add(Color.white); // lets particle shaders use it too
+            m.SetColors(cols);
+            return m;
         }
 
         /// <summary>Upright quad facing -Z (toward the chase camera), pivot at its top centre.</summary>
