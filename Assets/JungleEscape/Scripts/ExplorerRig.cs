@@ -16,7 +16,7 @@ namespace JungleEscape
     {
         public struct Pose
         {
-            public Vector3 ThighL, ThighR, KneeL, KneeR, ShoulderL, ShoulderR, ElbowL, ElbowR, Spine, Neck, Pelvis;
+            public Vector3 ThighL, ThighR, KneeL, KneeR, AnkleL, AnkleR, ShoulderL, ShoulderR, ElbowL, ElbowR, Spine, Neck, Pelvis;
             public float BodyY, Bank, Yaw;
 
             public static Pose Lerp(Pose a, Pose b, float t)
@@ -25,6 +25,7 @@ namespace JungleEscape
                 {
                     ThighL = Vector3.LerpUnclamped(a.ThighL, b.ThighL, t), ThighR = Vector3.LerpUnclamped(a.ThighR, b.ThighR, t),
                     KneeL = Vector3.LerpUnclamped(a.KneeL, b.KneeL, t), KneeR = Vector3.LerpUnclamped(a.KneeR, b.KneeR, t),
+                    AnkleL = Vector3.LerpUnclamped(a.AnkleL, b.AnkleL, t), AnkleR = Vector3.LerpUnclamped(a.AnkleR, b.AnkleR, t),
                     ShoulderL = Vector3.LerpUnclamped(a.ShoulderL, b.ShoulderL, t), ShoulderR = Vector3.LerpUnclamped(a.ShoulderR, b.ShoulderR, t),
                     ElbowL = Vector3.LerpUnclamped(a.ElbowL, b.ElbowL, t), ElbowR = Vector3.LerpUnclamped(a.ElbowR, b.ElbowR, t),
                     Spine = Vector3.LerpUnclamped(a.Spine, b.Spine, t), Neck = Vector3.LerpUnclamped(a.Neck, b.Neck, t),
@@ -42,7 +43,7 @@ namespace JungleEscape
         public GameObject ShieldFx, GliderFx, BonanzaFx;
         public Transform MagnetFx;
 
-        Transform body, pelvis, spine, neck, thighL, thighR, kneeL, kneeR, shoulderL, shoulderR, elbowL, elbowR;
+        Transform body, pelvis, spine, neck, thighL, thighR, kneeL, kneeR, ankleL, ankleR, shoulderL, shoulderR, elbowL, elbowR;
         Transform pack, scarf1, scarf2, shadow;
         Vector3 packBase;
         Pose cur;
@@ -50,28 +51,77 @@ namespace JungleEscape
 
         // ---------------- Poses ----------------
 
+        // Sprint gait keyframes for the LEFT leg over one stride (u = 0 is heel strike).
+        // Pairs of (u, degrees). The right leg plays the same curves half a stride later.
+        static readonly float[] ThighKeys = { 0f, -30f, 0.12f, -12f, 0.38f, 24f, 0.5f, 18f, 0.68f, -30f, 0.85f, -58f, 0.95f, -40f };
+        static readonly float[] KneeKeys = { 0f, 14f, 0.12f, 34f, 0.38f, 14f, 0.58f, 122f, 0.72f, 105f, 0.86f, 45f, 0.96f, 16f };
+        static readonly float[] AnkleKeys = { 0f, -6f, 0.12f, -16f, 0.36f, 32f, 0.48f, 28f, 0.66f, -6f, 0.86f, -14f, 0.96f, -8f };
+
+        /// <summary>
+        /// Natural running cycle. p is the stride phase in radians. Stance (foot on the ground,
+        /// knee absorbing then pushing off through the toes) is followed by swing (heel kicks up
+        /// under the hips, knee drives forward, foot reaches for the next strike).
+        /// </summary>
         public static Pose Run(float p, float speedNorm)
         {
-            float sL = Mathf.Sin(p), cL = Mathf.Cos(p);
-            float stride = Mathf.Lerp(34f, 44f, speedNorm);
-            float lean = 9f + 7f * speedNorm;
+            float u = p / (Mathf.PI * 2f);
+            u -= Mathf.Floor(u);
+            float uR = u + 0.5f - Mathf.Floor(u + 0.5f);
+            float amp = Mathf.Lerp(0.85f, 1.1f, speedNorm);
+
+            float thL = Cyclic(u, ThighKeys) * amp, thR = Cyclic(uR, ThighKeys) * amp;
+            float knL = Cyclic(u, KneeKeys) * Mathf.Lerp(0.85f, 1.05f, speedNorm), knR = Cyclic(uR, KneeKeys) * Mathf.Lerp(0.85f, 1.05f, speedNorm);
+            float anL = Cyclic(u, AnkleKeys), anR = Cyclic(uR, AnkleKeys);
+
+            // Arms swing straight forward and back from the shoulder, in time with the opposite
+            // leg and centred on the hip (hand travels from beside the hip up to chest height).
+            const float thighMean = -15f;
+            float shL = 0.8f * (thR - thighMean) - 4f, shR = 0.8f * (thL - thighMean) - 4f;
+            float fwdL = Mathf.Clamp01(-shL / 35f), fwdR = Mathf.Clamp01(-shR / 35f);
+            float backL = Mathf.Clamp01(shL / 30f), backR = Mathf.Clamp01(shR / 30f);
+
+            float s = Mathf.Sin(u * Mathf.PI * 2f);
+            float lean = 11f + 8f * speedNorm;
+            float twist = 7f * s;
+
             return new Pose
             {
-                // Swinging leg folds tight under the body; stance leg stays nearly straight.
-                ThighL = new Vector3(-stride * sL - 4f, 0f, 0f),
-                ThighR = new Vector3(stride * sL - 4f, 0f, 0f),
-                KneeL = new Vector3(16f + 100f * Mathf.Pow(Mathf.Max(0f, cL), 1.6f), 0f, 0f),
-                KneeR = new Vector3(16f + 100f * Mathf.Pow(Mathf.Max(0f, -cL), 1.6f), 0f, 0f),
-                // Arms counter-swing with bent elbows.
-                ShoulderL = new Vector3(38f * sL, 0f, -7f),
-                ShoulderR = new Vector3(-38f * sL, 0f, 7f),
-                ElbowL = new Vector3(-80f + 18f * sL, 0f, 0f),
-                ElbowR = new Vector3(-80f - 18f * sL, 0f, 0f),
-                Spine = new Vector3(lean, 8f * sL, 0f),
-                Pelvis = new Vector3(0f, -7f * sL, 0f),
-                Neck = new Vector3(-lean * 0.7f + 3f, -7f * sL, 0f), // keeps the eyes level and forward
-                BodyY = 0.06f * (1f - Mathf.Abs(cL)) - 0.04f       // two bounces per stride, lowest at mid-stance
+                // Legs stay under the hips (no splay), knees track straight ahead.
+                ThighL = new Vector3(thL, 0f, 1f), ThighR = new Vector3(thR, 0f, -1f),
+                KneeL = new Vector3(knL, 0f, 0f), KneeR = new Vector3(knR, 0f, 0f),
+                AnkleL = new Vector3(anL, 0f, 0f), AnkleR = new Vector3(anR, 0f, 0f),
+                // Arms hang close to the body; the forward hand drifts slightly toward the midline.
+                ShoulderL = new Vector3(shL, 0f, -3f + 7f * fwdL),
+                ShoulderR = new Vector3(shR, 0f, 3f - 7f * fwdR),
+                // ~90 degree elbows: a little more bent going forward, opening slightly behind.
+                ElbowL = new Vector3(-(85f + 20f * fwdL - 15f * backL), 0f, 0f),
+                ElbowR = new Vector3(-(85f + 20f * fwdR - 15f * backR), 0f, 0f),
+                // Hips rotate with the legs, shoulders counter-rotate; no side-to-side rocking.
+                Pelvis = new Vector3(0f, -8f * s, 0f),
+                Spine = new Vector3(lean, twist, 0f),
+                Neck = new Vector3(-lean * 0.75f + 4f, -0.4f * twist, 0f),
+                // Lowest at each mid-stance, highest in the flight phase: two bounces per stride.
+                BodyY = -0.04f * Mathf.Cos(4f * Mathf.PI * (u - 0.15f)) - 0.008f
             };
+        }
+
+        /// <summary>Smooth (Catmull-Rom) sampling of looping keyframes given as (u, value) pairs.</summary>
+        static float Cyclic(float u, float[] keys)
+        {
+            int n = keys.Length / 2;
+            int i = n - 1;
+            for (int k = 0; k < n; k++)
+                if (keys[k * 2] > u) { i = k - 1; break; }
+            if (i < 0) i = n - 1;
+
+            int i0 = (i - 1 + n) % n, i2 = (i + 1) % n, i3 = (i + 2) % n;
+            float t1 = keys[i * 2], t2 = keys[i2 * 2];
+            if (t2 <= t1) t2 += 1f;
+            float uu = u < t1 ? u + 1f : u;
+            float f = Mathf.Clamp01((uu - t1) / (t2 - t1));
+
+            float p0 = keys[i0 * 2 + 1], p1 = keys[i * 2 + 1], p2 = keys[i2 * 2 + 1], p3 = keys[i3 * 2 + 1];
+            return 0.5f * (2f * p1 + (-p0 + p2) * f + (2f * p0 - 5f * p1 + 4f * p2 - p3) * f * f + (-p0 + 3f * p1 - 3f * p2 + p3) * f * f * f);
         }
 
         public static Pose Air(float vy)
@@ -80,16 +130,18 @@ namespace JungleEscape
             {
                 ThighL = new Vector3(-62f, 0f, 0f), KneeL = new Vector3(80f, 0f, 0f),
                 ThighR = new Vector3(22f, 0f, 0f), KneeR = new Vector3(75f, 0f, 0f),
-                ShoulderL = new Vector3(40f, 0f, -14f), ElbowL = new Vector3(-60f, 0f, 0f),
-                ShoulderR = new Vector3(-75f, 0f, 14f), ElbowR = new Vector3(-45f, 0f, 0f),
+                AnkleL = new Vector3(-5f, 0f, 0f), AnkleR = new Vector3(35f, 0f, 0f),
+                ShoulderL = new Vector3(40f, 0f, -6f), ElbowL = new Vector3(-70f, 0f, 0f),
+                ShoulderR = new Vector3(-75f, 0f, 6f), ElbowR = new Vector3(-55f, 0f, 0f),
                 Spine = new Vector3(16f, 0f, 0f), Neck = new Vector3(-8f, 0f, 0f)
             };
             var drop = new Pose
             {
                 ThighL = new Vector3(-30f, 0f, 0f), KneeL = new Vector3(38f, 0f, 0f),
                 ThighR = new Vector3(-8f, 0f, 0f), KneeR = new Vector3(48f, 0f, 0f),
-                ShoulderL = new Vector3(-15f, 0f, -58f), ElbowL = new Vector3(-30f, 0f, 0f),
-                ShoulderR = new Vector3(-15f, 0f, 58f), ElbowR = new Vector3(-30f, 0f, 0f),
+                AnkleL = new Vector3(-12f, 0f, 0f), AnkleR = new Vector3(5f, 0f, 0f),
+                ShoulderL = new Vector3(-25f, 0f, -28f), ElbowL = new Vector3(-50f, 0f, 0f),
+                ShoulderR = new Vector3(-25f, 0f, 28f), ElbowR = new Vector3(-50f, 0f, 0f),
                 Spine = new Vector3(6f, 0f, 0f), Neck = new Vector3(4f, 0f, 0f)
             };
             return Pose.Lerp(leap, drop, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(5f, -7f, vy)));
@@ -101,8 +153,9 @@ namespace JungleEscape
             {
                 ThighL = new Vector3(-48f, 0f, 0f), KneeL = new Vector3(88f, 0f, 0f),
                 ThighR = new Vector3(-30f, 0f, 0f), KneeR = new Vector3(78f, 0f, 0f),
-                ShoulderL = new Vector3(-30f, 0f, -25f), ElbowL = new Vector3(-55f, 0f, 0f),
-                ShoulderR = new Vector3(-30f, 0f, 25f), ElbowR = new Vector3(-55f, 0f, 0f),
+                AnkleL = new Vector3(-28f, 0f, 0f), AnkleR = new Vector3(-24f, 0f, 0f),
+                ShoulderL = new Vector3(-30f, 0f, -12f), ElbowL = new Vector3(-65f, 0f, 0f),
+                ShoulderR = new Vector3(-30f, 0f, 12f), ElbowR = new Vector3(-65f, 0f, 0f),
                 Spine = new Vector3(28f, 0f, 0f), Neck = new Vector3(-18f, 0f, 0f),
                 BodyY = -0.24f
             };
@@ -114,6 +167,7 @@ namespace JungleEscape
             {
                 ThighL = new Vector3(-118f, 0f, 3f), KneeL = new Vector3(140f, 0f, 0f),
                 ThighR = new Vector3(-118f, 0f, -3f), KneeR = new Vector3(140f, 0f, 0f),
+                AnkleL = new Vector3(30f, 0f, 0f), AnkleR = new Vector3(30f, 0f, 0f),
                 ShoulderL = new Vector3(-80f, 0f, -12f), ElbowL = new Vector3(-95f, 0f, 0f),
                 ShoulderR = new Vector3(-80f, 0f, 12f), ElbowR = new Vector3(-95f, 0f, 0f),
                 Spine = new Vector3(55f, 0f, 0f), Neck = new Vector3(35f, 0f, 0f)
@@ -127,6 +181,7 @@ namespace JungleEscape
             {
                 ThighL = new Vector3(-12f + 10f * sway, 0f, -4f), KneeL = new Vector3(25f + 10f * sway, 0f, 0f),
                 ThighR = new Vector3(-12f - 10f * sway, 0f, 4f), KneeR = new Vector3(25f - 10f * sway, 0f, 0f),
+                AnkleL = new Vector3(38f, 0f, 0f), AnkleR = new Vector3(32f, 0f, 0f),
                 ShoulderL = new Vector3(-168f, 0f, -14f), ElbowL = new Vector3(-12f, 0f, 0f),
                 ShoulderR = new Vector3(-168f, 0f, 14f), ElbowR = new Vector3(-12f, 0f, 0f),
                 Spine = new Vector3(-4f, 0f, 0f), Neck = new Vector3(-12f, 0f, 0f),
@@ -156,6 +211,7 @@ namespace JungleEscape
             {
                 ThighL = new Vector3(-28f, 0f, -12f), KneeL = new Vector3(35f, 0f, 0f),
                 ThighR = new Vector3(-6f, 0f, 10f), KneeR = new Vector3(12f, 0f, 0f),
+                AnkleL = new Vector3(20f, 0f, 0f), AnkleR = new Vector3(25f, 0f, 0f),
                 ShoulderL = new Vector3(-30f, 0f, -75f), ElbowL = new Vector3(-35f, 0f, 0f),
                 ShoulderR = new Vector3(-50f, 0f, 70f), ElbowR = new Vector3(-20f, 0f, 0f),
                 Spine = new Vector3(-12f, 0f, 0f), Neck = new Vector3(22f, 15f, 0f)
@@ -184,6 +240,8 @@ namespace JungleEscape
             thighR.localRotation = Quaternion.Euler(cur.ThighR);
             kneeL.localRotation = Quaternion.Euler(cur.KneeL);
             kneeR.localRotation = Quaternion.Euler(cur.KneeR);
+            ankleL.localRotation = Quaternion.Euler(cur.AnkleL);
+            ankleR.localRotation = Quaternion.Euler(cur.AnkleR);
             shoulderL.localRotation = Quaternion.Euler(cur.ShoulderL);
             shoulderR.localRotation = Quaternion.Euler(cur.ShoulderR);
             elbowL.localRotation = Quaternion.Euler(cur.ElbowL);
@@ -292,6 +350,8 @@ namespace JungleEscape
             thighR = Prim.Group("ThighR", pelvis, new Vector3(0.095f, -0.02f, 0f));
             kneeL = Prim.Group("KneeL", thighL, new Vector3(0f, -0.42f, 0f));
             kneeR = Prim.Group("KneeR", thighR, new Vector3(0f, -0.42f, 0f));
+            ankleL = Prim.Group("AnkleL", kneeL, new Vector3(0f, -0.405f, 0f));
+            ankleR = Prim.Group("AnkleR", kneeR, new Vector3(0f, -0.405f, 0f));
             for (int s = -1; s <= 1; s += 2)
             {
                 var th = s < 0 ? thighL : thighR;
@@ -301,8 +361,9 @@ namespace JungleEscape
                 Prim.Shape(ball, "KneeCap", kn, Vector3.zero, new Vector3(0.13f, 0.12f, 0.13f), trousers);
                 Prim.Shape(shin, "Shin", kn, Vector3.zero, Vector3.one, trousers);
                 Prim.Shape(bootShaft, "BootShaft", kn, new Vector3(0f, -0.27f, 0f), Vector3.one, leather);
-                Prim.Shape(boot, "Boot", kn, new Vector3(0f, -0.43f, 0.045f), Vector3.one, leather);
-                Prim.Shape(soleMesh, "Sole", kn, new Vector3(0f, -0.475f, 0.045f), Vector3.one, sole);
+                var an = s < 0 ? ankleL : ankleR;
+                Prim.Shape(boot, "Boot", an, new Vector3(0f, -0.025f, 0.045f), Vector3.one, leather);
+                Prim.Shape(soleMesh, "Sole", an, new Vector3(0f, -0.07f, 0.045f), Vector3.one, sole);
             }
 
             // ---- Torso ----
@@ -386,8 +447,8 @@ namespace JungleEscape
             var forearm = Meshes.Limb(0.26f, 0.047f, 0.037f, 12, 7);
             var palm = Meshes.RoundedBox(new Vector3(0.075f, 0.09f, 0.035f), 0.017f);
 
-            shoulderL = Prim.Group("ShoulderL", spine, new Vector3(-0.215f, 0.43f, -0.005f));
-            shoulderR = Prim.Group("ShoulderR", spine, new Vector3(0.215f, 0.43f, -0.005f));
+            shoulderL = Prim.Group("ShoulderL", spine, new Vector3(-0.228f, 0.43f, -0.005f));
+            shoulderR = Prim.Group("ShoulderR", spine, new Vector3(0.228f, 0.43f, -0.005f));
             elbowL = Prim.Group("ElbowL", shoulderL, new Vector3(0f, -0.29f, 0f));
             elbowR = Prim.Group("ElbowR", shoulderR, new Vector3(0f, -0.29f, 0f));
             for (int s = -1; s <= 1; s += 2)

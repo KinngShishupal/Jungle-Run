@@ -59,6 +59,7 @@ namespace JungleEscape
         float runPhase;
         int lastStep;
         float rollDustTimer;
+        float wAir, wGlide;
         readonly float[] power = new float[5];
 
         BoxCollider box;
@@ -281,6 +282,7 @@ namespace JungleEscape
             rollTimer = 0f;
             rollOnLand = false;
             jumpBufferTimer = landTimer = stumbleTimer = 0f;
+            wAir = wGlide = 0f;
             invuln = 0f;
             knocked = false;
             for (int i = 0; i < power.Length; i++) power[i] = 0f;
@@ -312,6 +314,7 @@ namespace JungleEscape
             invuln = InvulnAfterRevive;
             var p = transform.position;
             transform.position = new Vector3(x, 0f, p.z);
+            wAir = wGlide = 0f;
             rig.Snap(ExplorerRig.Run(runPhase, 0f));
         }
 
@@ -327,46 +330,40 @@ namespace JungleEscape
         void Animate(GameManager gm, float dt, float z)
         {
             float speedNorm = Mathf.InverseLerp(GameManager.StartSpeed, GameManager.MaxSpeed, gm.Speed);
-            // Stride frequency rises with speed (about 1.5 to 2 strides per second).
-            runPhase += dt * Mathf.PI * 2f * Mathf.Lerp(1.5f, 2.05f, speedNorm);
+            // Cadence rises with speed (about 2.5 to 3.3 strides per second, a sprinter's rhythm).
+            runPhase += dt * Mathf.PI * 2f * Mathf.Lerp(2.5f, 3.3f, speedNorm);
 
-            ExplorerRig.Pose pose;
+            // State weights are smoothed; the run cycle itself plays crisply (no joint lag).
+            wAir = Mathf.MoveTowards(wAir, !grounded && !IsGliding ? 1f : 0f, dt * 9f);
+            wGlide = Mathf.MoveTowards(wGlide, IsGliding ? 1f : 0f, dt * 3f);
+
+            var pose = ExplorerRig.Run(runPhase, speedNorm);
             float rollAngle = 0f;
-            float sharp = 16f;
-            float runWeight = 0f;
+            float sharp = 35f;
+            float runWeight = grounded && !IsRolling ? 1f - wAir : 0f;
 
-            if (IsGliding)
-            {
-                pose = ExplorerRig.Glide(animTime);
-                sharp = 6f;
-            }
-            else if (!grounded)
-            {
-                pose = ExplorerRig.Air(vy);
-                sharp = 12f;
-            }
-            else if (IsRolling)
+            if (IsRolling && grounded)
             {
                 // Tuck, somersault forward once, then come up running.
                 float r = 1f - rollTimer / RollDuration;
                 float tuck = Tex.SS(0f, 0.12f, r) * Tex.SS(1f, 0.8f, r);
                 var t = ExplorerRig.Tuck();
                 t.BodyY = -0.42f;
-                pose = ExplorerRig.Pose.Lerp(ExplorerRig.Run(runPhase, speedNorm), t, tuck);
+                pose = ExplorerRig.Pose.Lerp(pose, t, tuck);
                 rollAngle = 360f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.06f, 0.82f, r));
-                sharp = 24f;
                 if ((rollDustTimer -= dt) <= 0f)
                 {
                     rollDustTimer = 0.05f;
                     Fx.Dust(new Vector3(x, 0f, z - 0.3f), 1, 0.6f);
                 }
             }
-            else
+            else if (runWeight > 0.8f)
             {
-                pose = ExplorerRig.Run(runPhase, speedNorm);
-                runWeight = 1f;
                 FootfallDust(z);
             }
+
+            if (wAir > 0f) pose = ExplorerRig.Pose.Lerp(pose, ExplorerRig.Air(vy), Mathf.SmoothStep(0f, 1f, wAir));
+            if (wGlide > 0f) pose = ExplorerRig.Pose.Lerp(pose, ExplorerRig.Glide(animTime), Mathf.SmoothStep(0f, 1f, wGlide));
 
             // Absorb the landing: knees bend, body drops, then springs back up.
             if (grounded && !IsRolling && landTimer > 0f)
