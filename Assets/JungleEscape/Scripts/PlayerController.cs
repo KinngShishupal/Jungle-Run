@@ -64,6 +64,9 @@ namespace JungleEscape
 
         BoxCollider box;
         ExplorerRig rig;
+        HumanoidCharacter human;              // skinned mocap character, when one has been added
+        readonly float[] humanWeights = new float[7];
+        float bankNow, yawNow;
 
         public bool IsRolling => rollTimer > 0f;
         public bool IsGliding => power[(int)PickupType.Glider] > 0f;
@@ -81,6 +84,8 @@ namespace JungleEscape
             rb.useGravity = false;
             rig = new ExplorerRig();
             rig.Build(transform);
+            human = HumanoidCharacter.TryCreate(transform);
+            if (human != null) rig.HideBody();
             SetCollider(false);
             UpdateFx();
         }
@@ -246,6 +251,7 @@ namespace JungleEscape
                 Lane = prevLane;
                 xVel = -xVel * 0.5f; // rebound off the obstacle
                 stumbleTimer = StumbleDuration;
+                human?.Restart(HumanoidCharacter.Clip.Stumble);
                 gm.OnStumble();
                 return;
             }
@@ -290,6 +296,7 @@ namespace JungleEscape
             SetCollider(false);
             rig.Root.gameObject.SetActive(true);
             rig.Snap(ExplorerRig.Idle(animTime));
+            human?.SnapTo(HumanoidCharacter.Clip.Idle);
             rig.GroundShadow(0f);
             UpdateFx();
         }
@@ -299,6 +306,7 @@ namespace JungleEscape
             knocked = true;
             knockTimer = 0f;
             knockLanded = false;
+            human?.Restart(HumanoidCharacter.Clip.Fall);
             rollTimer = 0f;
             rig.Root.gameObject.SetActive(true);
         }
@@ -316,6 +324,7 @@ namespace JungleEscape
             transform.position = new Vector3(x, 0f, p.z);
             wAir = wGlide = 0f;
             rig.Snap(ExplorerRig.Run(runPhase, 0f));
+            human?.SnapTo(HumanoidCharacter.Clip.Run);
         }
 
         // ---------------- Animation ----------------
@@ -389,13 +398,17 @@ namespace JungleEscape
                 pose.Bank += 10f * wob;
             }
 
+            bankNow = pose.Bank;
+            yawNow = pose.Yaw;
             rig.Apply(pose, dt, rollAngle, 0f, sharp);
+            DriveHuman(dt, speedNorm);
             rig.Secondary(animTime, runPhase, runWeight, speedNorm);
             rig.GroundShadow(y);
 
             // Blink while invulnerable
             bool visible = invuln <= 0f || Mathf.Repeat(animTime, 0.2f) < 0.12f;
             rig.Root.gameObject.SetActive(visible);
+            human?.SetVisible(visible);
 
             UpdateFx();
             rig.MagnetFx.Rotate(0f, 360f * dt, 0f, Space.Self);
@@ -414,6 +427,7 @@ namespace JungleEscape
         void IdleUpdate(float dt)
         {
             rig.Apply(ExplorerRig.Idle(animTime), dt, 0f, 0f, 6f);
+            HumanIdle(dt);
             rig.Secondary(animTime, 0f, 0f, 0f);
             rig.GroundShadow(0f);
         }
@@ -446,9 +460,102 @@ namespace JungleEscape
             }
 
             rig.Apply(ExplorerRig.Knocked(), dt, 0f, fall, 12f);
+            HumanKnocked(dt, fall);
             rig.Secondary(animTime, 0f, 0f, 0f);
             rig.GroundShadow(y);
         }
+
+        // ---------------- Skinned character (motion capture) ----------------
+
+        /// <summary>
+        /// Chooses and blends the mocap clips from the gameplay state. The jump and roll clips are
+        /// scrubbed from the physics so the animation always matches the actual movement.
+        /// </summary>
+        void DriveHuman(float dt, float speedNorm)
+        {
+            if (human == null) return;
+            System.Array.Clear(humanWeights, 0, humanWeights.Length);
+            float sharp = 14f;
+
+            if (IsGliding)
+            {
+                if (human.Has(HumanoidCharacter.Clip.Glide)) { humanWeights[(int)HumanoidCharacter.Clip.Glide] = 1f; human.Play(HumanoidCharacter.Clip.Glide, 1f); }
+                else { humanWeights[(int)HumanoidCharacter.Clip.Jump] = 1f; human.Scrub(HumanoidCharacter.Clip.Jump, 0.5f); }
+                sharp = 4f;
+            }
+            else if (!grounded)
+            {
+                // 0 at take-off, 0.5 at the apex, 1 at touchdown.
+                float t = vy > 0f ? 0.5f * (1f - vy / JumpVelocity) : 0.5f + 0.5f * Mathf.Clamp01(-vy / (JumpVelocity * 1.15f));
+                humanWeights[(int)HumanoidCharacter.Clip.Jump] = 1f;
+                human.Scrub(HumanoidCharacter.Clip.Jump, Mathf.Lerp(0.22f, 0.78f, t));
+                sharp = 20f;
+            }
+            else if (IsRolling && human.Has(HumanoidCharacter.Clip.Roll))
+            {
+                humanWeights[(int)HumanoidCharacter.Clip.Roll] = 1f;
+                human.Scrub(HumanoidCharacter.Clip.Roll, 1f - rollTimer / RollDuration);
+                sharp = 25f;
+            }
+            else
+            {
+                humanWeights[(int)HumanoidCharacter.Clip.Run] = 1f;
+                human.Play(HumanoidCharacter.Clip.Run, Mathf.Lerp(1.0f, 1.45f, speedNorm));
+            }
+
+            if (stumbleTimer > 0f && human.Has(HumanoidCharacter.Clip.Stumble))
+                humanWeights[(int)HumanoidCharacter.Clip.Stumble] = Mathf.Clamp01(stumbleTimer / StumbleDuration * 1.5f);
+
+            human.Blend(humanWeights, dt, sharp);
+            // Lean into lane changes (and roll forward if there is no roll clip).
+            float roll = IsRolling && grounded && !human.Has(HumanoidCharacter.Clip.Roll)
+                ? 360f * Mathf.SmoothStep(0f, 1f, 1f - rollTimer / RollDuration) : 0f;
+            var q = Quaternion.Euler(0f, yawNow, bankNow) * Quaternion.Euler(roll, 0f, 0f);
+            var pivot = new Vector3(0f, roll != 0f ? 0.5f : 0f, 0f);
+            human.Root.localRotation = q;
+            human.Root.localPosition = pivot - q * pivot;
+        }
+
+        void HumanIdle(float dt)
+        {
+            if (human == null) return;
+            System.Array.Clear(humanWeights, 0, humanWeights.Length);
+            if (human.Has(HumanoidCharacter.Clip.Idle))
+            {
+                humanWeights[(int)HumanoidCharacter.Clip.Idle] = 1f;
+                human.Play(HumanoidCharacter.Clip.Idle, 1f);
+            }
+            else
+            {
+                humanWeights[(int)HumanoidCharacter.Clip.Run] = 1f;
+                human.Scrub(HumanoidCharacter.Clip.Run, 0.1f);
+            }
+            human.Blend(humanWeights, dt, 6f);
+            human.Root.localRotation = Quaternion.identity;
+            human.Root.localPosition = Vector3.zero;
+        }
+
+        void HumanKnocked(float dt, float fallAngle)
+        {
+            if (human == null) return;
+            System.Array.Clear(humanWeights, 0, humanWeights.Length);
+            if (human.Has(HumanoidCharacter.Clip.Fall))
+            {
+                humanWeights[(int)HumanoidCharacter.Clip.Fall] = 1f;
+                human.Blend(humanWeights, dt, 20f);
+                return;
+            }
+            // No fall clip: topple the whole character backwards around the heels.
+            humanWeights[(int)HumanoidCharacter.Clip.Run] = 1f;
+            human.Scrub(HumanoidCharacter.Clip.Run, 0.3f);
+            human.Blend(humanWeights, dt, 20f);
+            var pivot = new Vector3(0f, 0f, -0.12f);
+            var q = Quaternion.Euler(fallAngle, 0f, 0f);
+            human.Root.localRotation = q;
+            human.Root.localPosition = pivot - q * pivot;
+        }
+
+        void OnDestroy() => human?.Dispose();
 
         void UpdateFx()
         {

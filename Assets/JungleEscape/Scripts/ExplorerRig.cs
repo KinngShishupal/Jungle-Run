@@ -44,8 +44,7 @@ namespace JungleEscape
         public Transform MagnetFx;
 
         Transform body, pelvis, spine, neck, thighL, thighR, kneeL, kneeR, ankleL, ankleR, shoulderL, shoulderR, elbowL, elbowR;
-        Transform pack, scarf1, scarf2, shadow;
-        Vector3 packBase;
+        Transform frontFlap, backFlap, shadow;
         Pose cur;
         Material shadowMat;
 
@@ -274,13 +273,30 @@ namespace JungleEscape
             }
         }
 
-        /// <summary>Backpack bounce and scarf flutter.</summary>
+        /// <summary>Loincloth flaps: the front one is pushed by the thighs, the back one trails in the wind.</summary>
         public void Secondary(float time, float runPhase, float runWeight, float speedNorm)
         {
-            pack.localPosition = packBase + new Vector3(0f, -0.022f * Mathf.Cos(runPhase * 2f) * runWeight, 0f);
-            float trail = runWeight * (40f + 35f * speedNorm);
-            scarf1.localRotation = Quaternion.Euler(12f + trail + 9f * Mathf.Sin(time * 17f), 0f, 6f * Mathf.Sin(time * 11f));
-            scarf2.localRotation = Quaternion.Euler(10f + 0.35f * trail + 14f * Mathf.Sin(time * 21f + 1.3f), 0f, 0f);
+            float front = Mathf.Min(cur.ThighL.x, cur.ThighR.x);
+            float back = Mathf.Max(cur.ThighL.x, cur.ThighR.x);
+            float flutter = Mathf.Sin(time * 15f) * (2f + 6f * runWeight);
+            frontFlap.localRotation = Quaternion.Euler(Mathf.Min(0f, front * 0.9f) + flutter, 0f, 3f * Mathf.Sin(time * 9f) * runWeight);
+            backFlap.localRotation = Quaternion.Euler(Mathf.Max(0f, back * 0.6f) + runWeight * (22f + 25f * speedNorm) + 1.4f * flutter,
+                                                      0f, 4f * Mathf.Sin(time * 11f + 1f) * runWeight);
+        }
+
+        /// <summary>
+        /// Hides the built-in body (used when a skinned character model is present) while keeping
+        /// the power-up effects, which still follow this invisible skeleton.
+        /// </summary>
+        public void HideBody()
+        {
+            var keep = new[] { ShieldFx.transform, GliderFx.transform, MagnetFx, BonanzaFx.transform };
+            foreach (var r in Root.GetComponentsInChildren<Renderer>(true))
+            {
+                bool fx = false;
+                foreach (var k in keep) if (r.transform.IsChildOf(k)) { fx = true; break; }
+                if (!fx) r.enabled = false;
+            }
         }
 
         /// <summary>Keeps the soft contact shadow on the ground under the feet.</summary>
@@ -288,66 +304,65 @@ namespace JungleEscape
         {
             shadow.localPosition = new Vector3(0f, -height + 0.02f, 0f);
             float s = Mathf.Lerp(1.0f, 0.55f, Mathf.Clamp01(height / 3f));
-            shadow.localScale = new Vector3(s * 0.9f, 1f, s * 1.1f);
+            shadow.localScale = new Vector3(s * 0.8f, 1f, s * 1.0f);
             var c = new Color(0f, 0f, 0f, Mathf.Lerp(0.55f, 0.12f, Mathf.Clamp01(height / 4f)));
             shadowMat.SetColor("_BaseColor", c);
         }
 
         // ---------------- Building ----------------
 
+        /// <summary>
+        /// A feral jungle boy in the spirit of Kipling's Mowgli: slim, sun-browned, barefoot,
+        /// a mop of black hair, a cloth loincloth tied with a vine, vine bands on the wrists.
+        /// </summary>
         public void Build(Transform parent)
         {
-            var skin = Mats.Skin(new Color(0.84f, 0.62f, 0.46f));
-            var shirt = Mats.Fabric(new Color(0.87f, 0.81f, 0.67f));
-            var shirtDark = Mats.Fabric(new Color(0.76f, 0.70f, 0.56f));
-            var trousers = Mats.Fabric(new Color(0.47f, 0.40f, 0.29f));
-            var trouserDark = Mats.Fabric(new Color(0.40f, 0.34f, 0.24f));
-            var leather = Mats.Leather(new Color(0.30f, 0.19f, 0.11f));
-            var sole = Mats.Leather(new Color(0.10f, 0.08f, 0.07f));
-            var felt = Mats.Fabric(new Color(0.46f, 0.33f, 0.20f));
-            var band = Mats.Leather(new Color(0.13f, 0.09f, 0.07f));
-            var scarf = Mats.Fabric(new Color(0.70f, 0.12f, 0.07f));
-            var canvas = Mats.Fabric(new Color(0.37f, 0.39f, 0.24f));
-            var bedroll = Mats.Fabric(new Color(0.44f, 0.19f, 0.11f));
-            var hair = Mats.Fur(new Color(0.20f, 0.13f, 0.08f));
-            var steel = Mats.Lit("Steel", Tex.Metal, new Color(0.55f, 0.56f, 0.55f), 0.7f, metallic: 0.9f);
-            var eyeWhite = Mats.Plain(new Color(0.92f, 0.9f, 0.86f), 0.7f);
-            var iris = Mats.Plain(new Color(0.12f, 0.08f, 0.05f), 0.95f);
+            var skin = Mats.Skin(new Color(0.53f, 0.34f, 0.22f));
+            var skinDark = Mats.Skin(new Color(0.40f, 0.24f, 0.16f));
+            var hair = Mats.Lit("JungleHair", Tex.Fur, new Color(0.055f, 0.045f, 0.04f), 0.45f, tiling: new Vector2(3f, 2f));
+            var cloth = Mats.Fabric(new Color(0.60f, 0.13f, 0.08f));
+            var clothDark = Mats.Fabric(new Color(0.46f, 0.10f, 0.06f));
+            var vine = Mats.Vine;
+            var tooth = Mats.Plain(new Color(0.9f, 0.85f, 0.72f), 0.5f);
+            var eyeWhite = Mats.Plain(new Color(0.93f, 0.91f, 0.87f), 0.75f);
+            var iris = Mats.Plain(new Color(0.10f, 0.06f, 0.03f), 0.95f);
+            var brow = Mats.Plain(new Color(0.05f, 0.04f, 0.035f), 0.3f);
 
             var ball = Meshes.Ball(12, 18);
 
             Root = Prim.Group("Model", parent, Vector3.zero);
+            Root.localScale = Vector3.one * 0.92f; // a lean teenager, a little shorter than an adult
             body = Prim.Group("Body", Root, Vector3.zero);
             pelvis = Prim.Group("Pelvis", body, new Vector3(0f, HipHeight, 0f));
 
-            // ---- Hips & legs ----
+            // ---- Hips & loincloth ----
             var hipsMesh = Meshes.Lathe(new[]
             {
-                new Vector2(0.10f, -0.16f), new Vector2(0.155f, -0.12f), new Vector2(0.168f, -0.04f), new Vector2(0.163f, 0.06f)
+                new Vector2(0.09f, -0.15f), new Vector2(0.128f, -0.11f), new Vector2(0.14f, -0.04f), new Vector2(0.135f, 0.05f)
             }, 18, 2f, "Hips");
-            Prim.Shape(hipsMesh, "Hips", pelvis, Vector3.zero, new Vector3(1f, 1f, 0.72f), trousers);
-            var belt = Meshes.Lathe(new[] { new Vector2(0.168f, 0f), new Vector2(0.174f, 0.025f), new Vector2(0.168f, 0.05f) }, 18);
-            Prim.Shape(belt, "Belt", pelvis, new Vector3(0f, 0.01f, 0f), new Vector3(1f, 1f, 0.74f), leather);
-            Prim.Shape(Meshes.RoundedBox(new Vector3(0.065f, 0.045f, 0.02f), 0.008f), "Buckle", pelvis, new Vector3(0f, 0.035f, 0.128f), Vector3.one, Mats.Gold);
-
-            // Canteen on the right hip
-            var canteen = Meshes.Lathe(new[]
+            Prim.Shape(hipsMesh, "Hips", pelvis, Vector3.zero, new Vector3(1f, 1f, 0.74f), skin);
+            var wrap = Meshes.Lathe(new[]
             {
-                new Vector2(0.001f, 0f), new Vector2(0.06f, 0.005f), new Vector2(0.075f, 0.05f), new Vector2(0.075f, 0.12f),
-                new Vector2(0.05f, 0.16f), new Vector2(0.02f, 0.17f), new Vector2(0.02f, 0.19f), new Vector2(0.001f, 0.19f)
-            }, 14);
-            Prim.Shape(canteen, "Canteen", pelvis, new Vector3(0.19f, -0.17f, -0.03f), new Vector3(1f, 1f, 0.55f), steel, new Vector3(0f, 0f, -6f));
-            Prim.Shape(Meshes.RoundedBox(new Vector3(0.11f, 0.09f, 0.06f), 0.02f), "Pouch", pelvis, new Vector3(-0.17f, -0.04f, 0.05f), Vector3.one, leather);
+                new Vector2(0.118f, -0.13f), new Vector2(0.14f, -0.09f), new Vector2(0.148f, -0.03f), new Vector2(0.142f, 0.035f)
+            }, 18, 3f, "Wrap");
+            Prim.Shape(wrap, "Loincloth", pelvis, Vector3.zero, new Vector3(1.02f, 1f, 0.78f), cloth);
+            var band = Meshes.Lathe(new[] { new Vector2(0.144f, 0f), new Vector2(0.151f, 0.016f), new Vector2(0.144f, 0.032f) }, 18, 4f);
+            Prim.Shape(band, "VineBelt", pelvis, new Vector3(0f, 0.02f, 0f), new Vector3(1f, 1f, 0.78f), vine);
+            Prim.Shape(ball, "Knot", pelvis, new Vector3(0.11f, 0.03f, 0.06f), new Vector3(0.05f, 0.04f, 0.04f), vine);
 
-            var thigh = Meshes.Limb(0.42f, 0.088f, 0.066f, 12, 8);
-            var shin = Meshes.Limb(0.40f, 0.066f, 0.05f, 12, 8);
-            var bootShaft = Meshes.Limb(0.16f, 0.064f, 0.06f, 12, 5);
-            var boot = Meshes.RoundedBox(new Vector3(0.12f, 0.1f, 0.27f), 0.045f);
-            var soleMesh = Meshes.RoundedBox(new Vector3(0.125f, 0.03f, 0.28f), 0.012f);
-            var cargo = Meshes.RoundedBox(new Vector3(0.05f, 0.13f, 0.1f), 0.02f);
+            var flap = Meshes.RoundedBox(new Vector3(0.15f, 0.26f, 0.018f), 0.008f);
+            frontFlap = Prim.Group("FrontFlap", pelvis, new Vector3(0f, 0.0f, 0.112f));
+            Prim.Shape(flap, "Flap", frontFlap, new Vector3(0f, -0.12f, 0f), Vector3.one, cloth);
+            backFlap = Prim.Group("BackFlap", pelvis, new Vector3(0f, 0.0f, -0.108f));
+            Prim.Shape(flap, "Flap", backFlap, new Vector3(0f, -0.13f, 0f), new Vector3(1.12f, 1.08f, 1f), clothDark);
 
-            thighL = Prim.Group("ThighL", pelvis, new Vector3(-0.095f, -0.02f, 0f));
-            thighR = Prim.Group("ThighR", pelvis, new Vector3(0.095f, -0.02f, 0f));
+            // ---- Bare legs & feet ----
+            var thigh = Meshes.Limb(0.42f, 0.072f, 0.055f, 12, 8);
+            var shin = Meshes.Limb(0.405f, 0.054f, 0.038f, 12, 8);
+            var foot = Meshes.RoundedBox(new Vector3(0.085f, 0.055f, 0.2f), 0.026f);
+
+            thighL = Prim.Group("ThighL", pelvis, new Vector3(-0.08f, -0.02f, 0f));
+            thighR = Prim.Group("ThighR", pelvis, new Vector3(0.08f, -0.02f, 0f));
             kneeL = Prim.Group("KneeL", thighL, new Vector3(0f, -0.42f, 0f));
             kneeR = Prim.Group("KneeR", thighR, new Vector3(0f, -0.42f, 0f));
             ankleL = Prim.Group("AnkleL", kneeL, new Vector3(0f, -0.405f, 0f));
@@ -356,112 +371,90 @@ namespace JungleEscape
             {
                 var th = s < 0 ? thighL : thighR;
                 var kn = s < 0 ? kneeL : kneeR;
-                Prim.Shape(thigh, "Thigh", th, Vector3.zero, Vector3.one, trousers);
-                Prim.Shape(cargo, "CargoPocket", th, new Vector3(s * 0.075f, -0.24f, 0f), Vector3.one, trouserDark);
-                Prim.Shape(ball, "KneeCap", kn, Vector3.zero, new Vector3(0.13f, 0.12f, 0.13f), trousers);
-                Prim.Shape(shin, "Shin", kn, Vector3.zero, Vector3.one, trousers);
-                Prim.Shape(bootShaft, "BootShaft", kn, new Vector3(0f, -0.27f, 0f), Vector3.one, leather);
                 var an = s < 0 ? ankleL : ankleR;
-                Prim.Shape(boot, "Boot", an, new Vector3(0f, -0.025f, 0.045f), Vector3.one, leather);
-                Prim.Shape(soleMesh, "Sole", an, new Vector3(0f, -0.07f, 0.045f), Vector3.one, sole);
+                Prim.Shape(thigh, "Thigh", th, Vector3.zero, Vector3.one, skin);
+                Prim.Shape(ball, "KneeCap", kn, new Vector3(0f, 0f, 0.012f), new Vector3(0.1f, 0.1f, 0.1f), skin);
+                Prim.Shape(shin, "Shin", kn, Vector3.zero, Vector3.one, skin);
+                Prim.Shape(ball, "AnkleBone", an, Vector3.zero, new Vector3(0.075f, 0.07f, 0.08f), skin);
+                Prim.Shape(foot, "Foot", an, new Vector3(0f, -0.04f, 0.045f), Vector3.one, skin);
+                Prim.Shape(ball, "Heel", an, new Vector3(0f, -0.04f, -0.04f), new Vector3(0.075f, 0.06f, 0.07f), skin);
+                Prim.Shape(ball, "Toes", an, new Vector3(0f, -0.05f, 0.14f), new Vector3(0.085f, 0.04f, 0.055f), skinDark);
             }
 
-            // ---- Torso ----
+            // ---- Bare torso ----
             spine = Prim.Group("Spine", pelvis, new Vector3(0f, 0.05f, 0f));
             var torso = Meshes.Lathe(new[]
             {
-                new Vector2(0.158f, -0.06f), new Vector2(0.165f, 0.04f), new Vector2(0.172f, 0.16f), new Vector2(0.198f, 0.3f),
-                new Vector2(0.212f, 0.4f), new Vector2(0.195f, 0.47f), new Vector2(0.12f, 0.52f), new Vector2(0.055f, 0.54f),
+                new Vector2(0.13f, -0.06f), new Vector2(0.134f, 0.04f), new Vector2(0.14f, 0.16f), new Vector2(0.162f, 0.3f),
+                new Vector2(0.176f, 0.4f), new Vector2(0.163f, 0.47f), new Vector2(0.1f, 0.52f), new Vector2(0.05f, 0.54f),
                 new Vector2(0.001f, 0.545f)
-            }, 20, 2f, "Torso");
-            Prim.Shape(torso, "Torso", spine, Vector3.zero, new Vector3(1f, 1f, 0.68f), shirt);
-            // Chest pockets, placket and collar
-            var pocket = Meshes.RoundedBox(new Vector3(0.1f, 0.1f, 0.025f), 0.015f);
-            Prim.Shape(pocket, "PocketL", spine, new Vector3(-0.09f, 0.33f, 0.128f), Vector3.one, shirtDark, new Vector3(-10f, 0f, 0f));
-            Prim.Shape(pocket, "PocketR", spine, new Vector3(0.09f, 0.33f, 0.128f), Vector3.one, shirtDark, new Vector3(-10f, 0f, 0f));
-            Prim.Shape(Meshes.RoundedBox(new Vector3(0.03f, 0.42f, 0.015f), 0.006f), "Placket", spine, new Vector3(0f, 0.22f, 0.118f), Vector3.one, shirtDark, new Vector3(-6f, 0f, 0f));
-            var collar = Meshes.RoundedBox(new Vector3(0.09f, 0.06f, 0.015f), 0.01f);
-            Prim.Shape(collar, "CollarL", spine, new Vector3(-0.05f, 0.5f, 0.06f), Vector3.one, shirt, new Vector3(-55f, 25f, 20f));
-            Prim.Shape(collar, "CollarR", spine, new Vector3(0.05f, 0.5f, 0.06f), Vector3.one, shirt, new Vector3(-55f, -25f, -20f));
+            }, 22, 2f, "Torso");
+            Prim.Shape(torso, "Torso", spine, Vector3.zero, new Vector3(1f, 1f, 0.66f), skin);
+            // Subtle chest and shoulder-blade forms so the bare torso does not read as a tube.
+            Prim.Shape(ball, "ChestL", spine, new Vector3(-0.06f, 0.36f, 0.075f), new Vector3(0.13f, 0.1f, 0.06f), skin);
+            Prim.Shape(ball, "ChestR", spine, new Vector3(0.06f, 0.36f, 0.075f), new Vector3(0.13f, 0.1f, 0.06f), skin);
+            Prim.Shape(ball, "BladeL", spine, new Vector3(-0.07f, 0.37f, -0.07f), new Vector3(0.12f, 0.14f, 0.05f), skin);
+            Prim.Shape(ball, "BladeR", spine, new Vector3(0.07f, 0.37f, -0.07f), new Vector3(0.12f, 0.14f, 0.05f), skin);
 
-            // Shoulder straps
-            var strap = Meshes.RoundedBox(new Vector3(0.042f, 0.42f, 0.018f), 0.007f);
-            Prim.Shape(strap, "StrapL", spine, new Vector3(-0.1f, 0.27f, 0.132f), Vector3.one, leather, new Vector3(-9f, 0f, 0f));
-            Prim.Shape(strap, "StrapR", spine, new Vector3(0.1f, 0.27f, 0.132f), Vector3.one, leather, new Vector3(-9f, 0f, 0f));
-
-            // Backpack (bounces with the stride)
-            pack = Prim.Group("Backpack", spine, new Vector3(0f, 0.3f, -0.2f));
-            packBase = pack.localPosition;
-            Prim.Shape(Meshes.RoundedBox(new Vector3(0.33f, 0.4f, 0.18f), 0.06f), "Bag", pack, Vector3.zero, Vector3.one, canvas);
-            Prim.Shape(Meshes.RoundedBox(new Vector3(0.34f, 0.13f, 0.2f), 0.04f), "Flap", pack, new Vector3(0f, 0.15f, 0f), Vector3.one, leather);
-            Prim.Shape(Meshes.RoundedBox(new Vector3(0.2f, 0.14f, 0.07f), 0.03f), "Pocket", pack, new Vector3(0f, -0.08f, -0.11f), Vector3.one, canvas);
-            var roll = new List<Vector3> { new Vector3(-0.21f, 0f, 0f), new Vector3(0f, 0f, 0f), new Vector3(0.21f, 0f, 0f) };
-            Prim.Shape(Meshes.Sweep(roll, (t, a) => 0.072f, 14, 2f, 2f), "Bedroll", pack, new Vector3(0f, 0.27f, -0.01f), Vector3.one, bedroll);
-
-            // ---- Neck, scarf & head ----
-            neck = Prim.Group("Neck", spine, new Vector3(0f, 0.5f, 0f));
-            Prim.Shape(Meshes.Limb(0.12f, 0.055f, 0.05f, 10, 5), "NeckMesh", neck, new Vector3(0f, 0.12f, 0f), Vector3.one, skin);
-            var scarfRing = new List<Vector3>();
-            for (int i = 0; i <= 18; i++)
+            // Cord necklace with a single tooth
+            var cord = new List<Vector3>();
+            for (int i = 0; i <= 20; i++)
             {
-                float a = i / 18f * Mathf.PI * 2f;
-                scarfRing.Add(new Vector3(Mathf.Cos(a) * 0.075f, 0f, Mathf.Sin(a) * 0.072f));
+                float a = i / 20f * Mathf.PI * 2f;
+                cord.Add(new Vector3(Mathf.Cos(a) * 0.09f, -Mathf.Max(0f, Mathf.Sin(a)) * 0.05f, Mathf.Sin(a) * 0.075f));
             }
-            Prim.Shape(Meshes.Sweep(scarfRing, (t, a) => 0.032f, 8, 1f, 3f), "Scarf", neck, new Vector3(0f, 0.015f, 0f), Vector3.one, scarf);
-            // Scarf tail streaming behind (two hinged segments)
-            var tailSeg = Meshes.RoundedBox(new Vector3(0.07f, 0.16f, 0.015f), 0.007f);
-            scarf1 = Prim.Group("ScarfTail1", neck, new Vector3(0.03f, 0.0f, -0.08f));
-            Prim.Shape(tailSeg, "Seg", scarf1, new Vector3(0f, -0.08f, 0f), Vector3.one, scarf);
-            scarf2 = Prim.Group("ScarfTail2", scarf1, new Vector3(0f, -0.16f, 0f));
-            Prim.Shape(tailSeg, "Seg", scarf2, new Vector3(0f, -0.07f, 0f), new Vector3(0.85f, 0.9f, 1f), scarf);
+            Prim.Shape(Meshes.Sweep(cord, (t, a) => 0.007f, 5, 1f, 4f), "Necklace", spine, new Vector3(0f, 0.5f, 0.005f), Vector3.one, clothDark, null, false);
+            var fang = Meshes.Lathe(new[] { new Vector2(0.001f, 0f), new Vector2(0.012f, 0.03f), new Vector2(0.008f, 0.045f), new Vector2(0.001f, 0.05f) }, 8);
+            Prim.Shape(fang, "Fang", spine, new Vector3(0f, 0.395f, 0.088f), Vector3.one, tooth, new Vector3(180f, 0f, 0f), false);
 
-            var head = Prim.Group("Head", neck, new Vector3(0f, 0.17f, 0.01f));
-            Prim.Shape(ball, "Skull", head, Vector3.zero, new Vector3(0.2f, 0.24f, 0.225f), skin);
-            Prim.Shape(ball, "Jaw", head, new Vector3(0f, -0.065f, 0.025f), new Vector3(0.17f, 0.13f, 0.17f), skin);
-            Prim.Shape(ball, "Hair", head, new Vector3(0f, 0.035f, -0.022f), new Vector3(0.21f, 0.2f, 0.215f), hair);
-            Prim.Shape(ball, "Nose", head, new Vector3(0f, -0.01f, 0.112f), new Vector3(0.035f, 0.055f, 0.045f), skin);
-            Prim.Shape(ball, "EarL", head, new Vector3(-0.1f, 0f, -0.005f), new Vector3(0.035f, 0.065f, 0.035f), skin);
-            Prim.Shape(ball, "EarR", head, new Vector3(0.1f, 0f, -0.005f), new Vector3(0.035f, 0.065f, 0.035f), skin);
+            // ---- Neck & head ----
+            neck = Prim.Group("Neck", spine, new Vector3(0f, 0.5f, 0f));
+            Prim.Shape(Meshes.Limb(0.12f, 0.048f, 0.045f, 10, 5), "NeckMesh", neck, new Vector3(0f, 0.12f, 0f), Vector3.one, skin);
+
+            var head = Prim.Group("Head", neck, new Vector3(0f, 0.165f, 0.01f));
+            Prim.Shape(ball, "Skull", head, Vector3.zero, new Vector3(0.19f, 0.22f, 0.205f), skin);
+            Prim.Shape(ball, "Jaw", head, new Vector3(0f, -0.06f, 0.022f), new Vector3(0.15f, 0.115f, 0.15f), skin);
+            Prim.Shape(ball, "Nose", head, new Vector3(0f, -0.012f, 0.103f), new Vector3(0.032f, 0.045f, 0.04f), skin);
+            Prim.Shape(ball, "EarL", head, new Vector3(-0.094f, -0.005f, -0.005f), new Vector3(0.032f, 0.06f, 0.035f), skin);
+            Prim.Shape(ball, "EarR", head, new Vector3(0.094f, -0.005f, -0.005f), new Vector3(0.032f, 0.06f, 0.035f), skin);
+            Prim.Shape(Meshes.RoundedBox(new Vector3(0.04f, 0.007f, 0.01f), 0.003f), "Mouth", head, new Vector3(0f, -0.058f, 0.094f), Vector3.one, skinDark, null, false);
             for (int s = -1; s <= 1; s += 2)
             {
-                Prim.Shape(ball, "Eye", head, new Vector3(s * 0.04f, 0.022f, 0.093f), new Vector3(0.032f, 0.022f, 0.02f), eyeWhite, null, false);
-                Prim.Shape(ball, "Iris", head, new Vector3(s * 0.04f, 0.022f, 0.101f), Vector3.one * 0.013f, iris, null, false);
-                Prim.Shape(Meshes.RoundedBox(new Vector3(0.045f, 0.01f, 0.012f), 0.004f), "Brow", head,
-                           new Vector3(s * 0.042f, 0.047f, 0.1f), Vector3.one, hair, new Vector3(0f, 0f, s * -8f), false);
+                Prim.Shape(ball, "Eye", head, new Vector3(s * 0.037f, 0.016f, 0.086f), new Vector3(0.036f, 0.026f, 0.02f), eyeWhite, null, false);
+                Prim.Shape(ball, "Iris", head, new Vector3(s * 0.037f, 0.016f, 0.095f), Vector3.one * 0.016f, iris, null, false);
+                Prim.Shape(Meshes.RoundedBox(new Vector3(0.042f, 0.009f, 0.012f), 0.004f), "Brow", head,
+                           new Vector3(s * 0.039f, 0.043f, 0.094f), Vector3.one, brow, new Vector3(0f, 0f, s * -10f), false);
             }
 
-            // Fedora
-            var hat = Meshes.Lathe(new[]
-            {
-                new Vector2(0.12f, 0.022f), new Vector2(0.27f, 0f), new Vector2(0.275f, 0.017f), new Vector2(0.165f, 0.03f),
-                new Vector2(0.148f, 0.05f), new Vector2(0.142f, 0.125f), new Vector2(0.115f, 0.158f), new Vector2(0.04f, 0.143f),
-                new Vector2(0.001f, 0.15f)
-            }, 24, 2f, "Hat");
-            Prim.Shape(hat, "Hat", head, new Vector3(0f, 0.068f, -0.005f), new Vector3(1f, 1f, 1.08f), felt, new Vector3(-5f, 0f, 0f));
-            var hatBand = Meshes.Lathe(new[] { new Vector2(0.15f, 0f), new Vector2(0.148f, 0.03f) }, 24);
-            Prim.Shape(hatBand, "HatBand", head, new Vector3(0f, 0.122f, -0.003f), new Vector3(1f, 1f, 1.08f), band, new Vector3(-5f, 0f, 0f));
+            // Messy mop of black hair: several noisy clumps (shaggy on top, longer at the back).
+            Prim.Shape(Meshes.Blob(41, 2, 0.5f, 2.6f, 0f, false), "HairTop", head, new Vector3(0f, 0.05f, -0.012f), new Vector3(0.235f, 0.2f, 0.255f), hair);
+            Prim.Shape(Meshes.Blob(42, 2, 0.45f, 2.4f, 0f, false), "HairBack", head, new Vector3(0f, -0.02f, -0.06f), new Vector3(0.235f, 0.23f, 0.18f), hair);
+            Prim.Shape(Meshes.Blob(43, 2, 0.6f, 3f, 0f, false), "Fringe", head, new Vector3(0f, 0.075f, 0.07f), new Vector3(0.2f, 0.085f, 0.1f), hair, new Vector3(25f, 0f, 0f));
+            Prim.Shape(Meshes.Blob(44, 2, 0.55f, 2.8f, 0f, false), "SideL", head, new Vector3(-0.092f, 0.01f, -0.02f), new Vector3(0.07f, 0.15f, 0.15f), hair);
+            Prim.Shape(Meshes.Blob(45, 2, 0.55f, 2.8f, 0f, false), "SideR", head, new Vector3(0.092f, 0.01f, -0.02f), new Vector3(0.07f, 0.15f, 0.15f), hair);
+            Prim.Shape(Meshes.Blob(46, 2, 0.7f, 3.2f, 0f, false), "Tuft", head, new Vector3(0.03f, 0.13f, -0.03f), new Vector3(0.1f, 0.07f, 0.12f), hair, new Vector3(-20f, 30f, 15f));
 
-            // ---- Arms ----
-            var upperArm = Meshes.Limb(0.29f, 0.06f, 0.052f, 12, 7);
-            var cuff = Meshes.Lathe(new[] { new Vector2(0.056f, 0f), new Vector2(0.062f, 0.025f), new Vector2(0.056f, 0.05f) }, 12);
-            var forearm = Meshes.Limb(0.26f, 0.047f, 0.037f, 12, 7);
-            var palm = Meshes.RoundedBox(new Vector3(0.075f, 0.09f, 0.035f), 0.017f);
+            // ---- Bare arms ----
+            var upperArm = Meshes.Limb(0.29f, 0.05f, 0.042f, 12, 7);
+            var forearm = Meshes.Limb(0.26f, 0.04f, 0.031f, 12, 7);
+            var palm = Meshes.RoundedBox(new Vector3(0.062f, 0.08f, 0.03f), 0.014f);
+            var bracelet = Meshes.Lathe(new[] { new Vector2(0.034f, 0f), new Vector2(0.04f, 0.012f), new Vector2(0.034f, 0.024f) }, 12, 2f);
 
-            shoulderL = Prim.Group("ShoulderL", spine, new Vector3(-0.228f, 0.43f, -0.005f));
-            shoulderR = Prim.Group("ShoulderR", spine, new Vector3(0.228f, 0.43f, -0.005f));
+            shoulderL = Prim.Group("ShoulderL", spine, new Vector3(-0.19f, 0.43f, -0.005f));
+            shoulderR = Prim.Group("ShoulderR", spine, new Vector3(0.19f, 0.43f, -0.005f));
             elbowL = Prim.Group("ElbowL", shoulderL, new Vector3(0f, -0.29f, 0f));
             elbowR = Prim.Group("ElbowR", shoulderR, new Vector3(0f, -0.29f, 0f));
             for (int s = -1; s <= 1; s += 2)
             {
                 var sh = s < 0 ? shoulderL : shoulderR;
                 var el = s < 0 ? elbowL : elbowR;
-                Prim.Shape(ball, "Deltoid", sh, new Vector3(0f, -0.02f, 0f), new Vector3(0.13f, 0.13f, 0.13f), shirt);
-                Prim.Shape(upperArm, "Sleeve", sh, Vector3.zero, Vector3.one, shirt);
-                Prim.Shape(cuff, "RolledCuff", sh, new Vector3(0f, -0.26f, 0f), Vector3.one, shirtDark);
-                Prim.Shape(ball, "Elbow", el, Vector3.zero, Vector3.one * 0.085f, skin);
+                Prim.Shape(ball, "Deltoid", sh, new Vector3(0f, -0.025f, 0f), new Vector3(0.105f, 0.12f, 0.105f), skin);
+                Prim.Shape(upperArm, "UpperArm", sh, Vector3.zero, Vector3.one, skin);
+                Prim.Shape(ball, "Elbow", el, Vector3.zero, Vector3.one * 0.07f, skin);
                 Prim.Shape(forearm, "Forearm", el, Vector3.zero, Vector3.one, skin);
-                Prim.Shape(palm, "Hand", el, new Vector3(0f, -0.3f, 0.005f), Vector3.one, skin);
-                Prim.Shape(ball, "Thumb", el, new Vector3(s * -0.035f, -0.275f, 0.025f), new Vector3(0.025f, 0.05f, 0.025f), skin, new Vector3(20f, 0f, s * 25f));
+                Prim.Shape(bracelet, "VineBand", el, new Vector3(0f, -0.235f, 0f), Vector3.one, vine);
+                Prim.Shape(palm, "Hand", el, new Vector3(0f, -0.295f, 0.005f), Vector3.one, skin);
+                Prim.Shape(ball, "Thumb", el, new Vector3(s * -0.03f, -0.272f, 0.022f), new Vector3(0.022f, 0.045f, 0.022f), skin, new Vector3(20f, 0f, s * 25f));
             }
 
             // ---- Contact shadow ----
@@ -469,9 +462,9 @@ namespace JungleEscape
             shadow = Prim.Shape(Meshes.Disc(24), "ContactShadow", parent, new Vector3(0f, 0.02f, 0f), Vector3.one, shadowMat, null, false).transform;
 
             // ---- Power-up effects ----
-            ShieldFx = Prim.Shape(ball, "CoconutHelmet", head, new Vector3(0f, 0.1f, 0f), new Vector3(0.36f, 0.26f, 0.38f), Mats.Coconut);
+            ShieldFx = Prim.Shape(ball, "CoconutHelmet", head, new Vector3(0f, 0.11f, 0f), new Vector3(0.34f, 0.25f, 0.36f), Mats.Coconut);
 
-            GliderFx = Prim.Group("LeafGlider", body, new Vector3(0f, 2.35f, 0f)).gameObject;
+            GliderFx = Prim.Group("LeafGlider", body, new Vector3(0f, 2.3f, 0f)).gameObject;
             Prim.Shape(Meshes.Leaf(2.4f, 1.8f, 0.35f, 0.22f, 10), "Leaf", GliderFx.transform, new Vector3(0f, 0f, -1.2f), Vector3.one, Mats.BroadLeaf);
             var stem = new List<Vector3> { new Vector3(0f, 0f, -1.25f), new Vector3(0f, 0.05f, -1.5f), new Vector3(0f, 0f, -1.7f) };
             Prim.Shape(Meshes.Sweep(stem, (t, a) => 0.03f, 6, 1f, 1f), "Stem", GliderFx.transform, Vector3.zero, Vector3.one, Mats.Vine);
@@ -480,7 +473,7 @@ namespace JungleEscape
             Prim.Shape(ball, "Orb", MagnetFx, new Vector3(0.75f, 0f, 0f), Vector3.one * 0.22f, Mats.Gem, null, false);
             Prim.Shape(ball, "Orb", MagnetFx, new Vector3(-0.75f, 0f, 0f), Vector3.one * 0.22f, Mats.Gem, null, false);
 
-            var crown = Prim.Group("GoldenCrown", head, new Vector3(0f, 0.22f, 0f));
+            var crown = Prim.Group("GoldenCrown", head, new Vector3(0f, 0.2f, 0f));
             BonanzaFx = crown.gameObject;
             var ring = Meshes.Lathe(new[] { new Vector2(0.12f, 0f), new Vector2(0.13f, 0.02f), new Vector2(0.14f, 0.08f), new Vector2(0.13f, 0.09f) }, 20);
             Prim.Shape(ring, "Band", crown, Vector3.zero, Vector3.one, Mats.Gold);
