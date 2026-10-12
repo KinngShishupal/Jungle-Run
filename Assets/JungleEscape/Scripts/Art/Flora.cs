@@ -82,7 +82,7 @@ namespace JungleEscape
             Add(model, Matrix4x4.TRS(pos, Quaternion.Euler(0f, yaw, 0f), Vector3.one * scale));
 
         /// <summary>Merges everything and, if a trail distance is given, bends it onto the winding path.</summary>
-        public void Build(Transform parent, float trackS0 = float.NaN)
+        public void Build(Transform parent, float trackS0 = float.NaN, System.Func<Material, Material> remap = null)
         {
             var owner = parent.gameObject.GetComponent<OwnedMeshes>();
             if (owner == null) owner = parent.gameObject.AddComponent<OwnedMeshes>();
@@ -95,7 +95,7 @@ namespace JungleEscape
                 go.transform.SetParent(parent, false);
                 go.AddComponent<MeshFilter>().sharedMesh = mesh;
                 var r = go.AddComponent<MeshRenderer>();
-                r.sharedMaterial = kv.Key.Item1;
+                r.sharedMaterial = remap != null ? remap(kv.Key.Item1) : kv.Key.Item1;
                 r.shadowCastingMode = kv.Key.Item2 ? ShadowCastingMode.On : ShadowCastingMode.Off;
             }
             groups.Clear();

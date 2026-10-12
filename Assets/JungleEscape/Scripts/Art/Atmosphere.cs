@@ -23,6 +23,14 @@ namespace JungleEscape
 
         public static Light Sun { get; private set; }
         public static bool HighQuality { get; private set; }
+        public static ParticleSystem Pollen { get; private set; }
+
+        static Material skyMat;
+        static ColorAdjustments colorAdj;
+        static WhiteBalance whiteBal;
+        static SplitToning splitTone;
+        static Bloom bloomFx;
+        static Vignette vignette;
 
         public static void Setup(Camera cam)
         {
@@ -35,6 +43,89 @@ namespace JungleEscape
             SetupCamera(cam);
             SetupAirborneParticles(cam.transform);
             SetupMountains(cam.transform);
+        }
+
+        /// <summary>Applies a world's sky, sun, ambient light, haze, mountains and colour grade.</summary>
+        public static void ApplyLook(BiomeLook l)
+        {
+            if (Sun != null)
+            {
+                Sun.transform.rotation = Quaternion.Euler(l.SunEuler);
+                Sun.color = l.Sun;
+                Sun.intensity = l.SunIntensity;
+            }
+            if (skyMat != null)
+            {
+                skyMat.SetColor("_ZenithColor", l.Zenith);
+                skyMat.SetColor("_HorizonColor", l.Horizon);
+                skyMat.SetColor("_GroundColor", l.Haze * 0.8f);
+                skyMat.SetColor("_SunColor", l.Sun);
+                if (Sun != null) skyMat.SetVector("_SunDirection", -Sun.transform.forward);
+            }
+            RenderSettings.ambientSkyColor = l.AmbSky;
+            RenderSettings.ambientEquatorColor = l.AmbEquator;
+            RenderSettings.ambientGroundColor = l.AmbGround;
+            RenderSettings.fogColor = l.Haze;
+            RenderSettings.fogStartDistance = l.FogStart;
+            RenderSettings.fogEndDistance = l.FogEnd;
+
+            if (colorAdj != null)
+            {
+                colorAdj.postExposure.Override(l.Exposure);
+                colorAdj.contrast.Override(l.Contrast);
+                colorAdj.saturation.Override(l.Saturation);
+                colorAdj.colorFilter.Override(l.ColorFilter);
+                whiteBal.temperature.Override(l.Temperature);
+                splitTone.shadows.Override(l.SplitShadows);
+                splitTone.highlights.Override(l.SplitHighlights);
+                bloomFx.intensity.Override(l.Bloom);
+                vignette.intensity.Override(l.Vignette);
+                vignette.color.Override(l.VignetteColor);
+            }
+            var backdrop = Mats.Backdrop;
+            backdrop.SetColor("_HazeColor", l.Horizon);
+            backdrop.SetColor("_Tint", l.MountainTint);
+        }
+
+        /// <summary>Airborne particles for each world: pollen, snowfall, rising embers or ghostly wisps.</summary>
+        public static void SetAirborne(BiomeType b)
+        {
+            if (Pollen == null) return;
+            var main = Pollen.main;
+            var em = Pollen.emission;
+            var noise = Pollen.noise;
+            switch (b)
+            {
+                case BiomeType.IceAge:
+                    main.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 1f, 1f, 0.75f), new Color(0.85f, 0.92f, 1f, 0.45f));
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.13f);
+                    main.gravityModifier = 0.04f;
+                    em.rateOverTime = 140f;
+                    noise.strength = 0.5f;
+                    break;
+                case BiomeType.WaterWorld:
+                    // Sun glints and fine sea spray
+                    main.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 1f, 1f, 0.7f), new Color(0.7f, 0.95f, 1f, 0.35f));
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.02f, 0.07f);
+                    main.gravityModifier = -0.01f;
+                    em.rateOverTime = 60f;
+                    noise.strength = 0.35f;
+                    break;
+                case BiomeType.HorrorJungle:
+                    main.startColor = new ParticleSystem.MinMaxGradient(new Color(0.5f, 1f, 0.6f, 0.45f), new Color(0.4f, 0.7f, 1f, 0.2f));
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.16f);
+                    main.gravityModifier = 0f;
+                    em.rateOverTime = 26f;
+                    noise.strength = 0.4f;
+                    break;
+                default:
+                    main.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 0.92f, 0.65f, 0.55f), new Color(1f, 0.98f, 0.85f, 0.25f));
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.04f, 0.11f);
+                    main.gravityModifier = 0f;
+                    em.rateOverTime = 40f;
+                    noise.strength = 0.25f;
+                    break;
+            }
         }
 
         static void SetupSun()
@@ -60,7 +151,7 @@ namespace JungleEscape
 
         static void SetupSky()
         {
-            var sky = new Material(Mats.Template("JE_Sky"));
+            var sky = skyMat = new Material(Mats.Template("JE_Sky"));
             sky.SetColor("_ZenithColor", Zenith);
             sky.SetColor("_HorizonColor", Horizon);
             sky.SetColor("_GroundColor", Haze * 0.8f);
@@ -86,10 +177,18 @@ namespace JungleEscape
         }
 
         /// <summary>Small HDR cubemap of the sky so shiny things (gold idol, gems, wet leaves) reflect something believable.</summary>
-        static void SetupReflections()
+        static void SetupReflections() => Reflect(Zenith, Horizon, Haze, SunColor);
+
+        static Cubemap reflection;
+        static Color pZenith, pHorizon, pHaze, pSun;
+
+        /// <summary>Rebuilds the reflection cubemap from a sky palette (used when the world changes).</summary>
+        public static void Reflect(Color zenith, Color horizon, Color haze, Color sunColor)
         {
+            pZenith = zenith; pHorizon = horizon; pHaze = haze; pSun = sunColor;
+            if (reflection != null) Object.Destroy(reflection);
             const int size = 32;
-            var cube = new Cubemap(size, TextureFormat.RGBAHalf, true) { name = "JungleSkyReflection" };
+            var cube = reflection = new Cubemap(size, TextureFormat.RGBAHalf, true) { name = "SkyReflection" };
             var px = new Color[size * size];
             Vector3 sunDir = -Sun.transform.forward;
             for (int f = 0; f < 6; f++)
@@ -124,10 +223,10 @@ namespace JungleEscape
         static Color SkyColor(Vector3 d, Vector3 sunDir)
         {
             Color c;
-            if (d.y >= 0f) c = Color.Lerp(Horizon.linear, Zenith.linear, Mathf.Pow(d.y, 0.45f));
-            else c = Color.Lerp(Horizon.linear, (Haze * 0.35f).linear, Mathf.Clamp01(-d.y * 3f)); // canopy & ground below
+            if (d.y >= 0f) c = Color.Lerp(pHorizon.linear, pZenith.linear, Mathf.Pow(d.y, 0.45f));
+            else c = Color.Lerp(pHorizon.linear, (pHaze * 0.35f).linear, Mathf.Clamp01(-d.y * 3f)); // canopy & ground below
             float s = Mathf.Max(0f, Vector3.Dot(d, sunDir));
-            c += SunColor.linear * (Mathf.Pow(s, 6f) * 0.3f + Mathf.Pow(s, 48f) * 2f);
+            c += pSun.linear * (Mathf.Pow(s, 6f) * 0.3f + Mathf.Pow(s, 48f) * 2f);
             c.a = 1f;
             return c;
         }
@@ -145,30 +244,30 @@ namespace JungleEscape
             var tone = p.Add<Tonemapping>(true);
             tone.mode.Override(TonemappingMode.ACES);
 
-            var ca = p.Add<ColorAdjustments>(true);
+            var ca = colorAdj = p.Add<ColorAdjustments>(true);
             ca.postExposure.Override(0.85f);
             ca.contrast.Override(12f);
             ca.saturation.Override(8f);
             ca.colorFilter.Override(new Color(1f, 0.985f, 0.95f));
 
-            var wb = p.Add<WhiteBalance>(true);
+            var wb = whiteBal = p.Add<WhiteBalance>(true);
             wb.temperature.Override(6f);
             wb.tint.Override(0f);
 
             // Teal-leaning shadows, warm highlights: the classic filmic jungle grade.
-            var split = p.Add<SplitToning>(true);
+            var split = splitTone = p.Add<SplitToning>(true);
             split.shadows.Override(new Color(0.42f, 0.52f, 0.56f));
             split.highlights.Override(new Color(0.60f, 0.54f, 0.44f));
             split.balance.Override(15f);
 
-            var bloom = p.Add<Bloom>(true);
+            var bloom = bloomFx = p.Add<Bloom>(true);
             bloom.threshold.Override(1.05f);
             bloom.intensity.Override(0.55f);
             bloom.scatter.Override(0.7f);
             bloom.tint.Override(new Color(1f, 0.93f, 0.8f));
             bloom.highQualityFiltering.Override(HighQuality);
 
-            var vig = p.Add<Vignette>(true);
+            var vig = vignette = p.Add<Vignette>(true);
             vig.intensity.Override(0.3f);
             vig.smoothness.Override(0.45f);
             vig.color.Override(new Color(0.04f, 0.06f, 0.03f));
@@ -269,7 +368,7 @@ namespace JungleEscape
             root.gameObject.AddComponent<FollowZ>().Target = cam;
 
             // Sunlit pollen and dust motes drifting in the air.
-            var motes = Fx.MakeSystem("Pollen", root, Mats.ParticleAdd(Tex.Glow), 260);
+            var motes = Pollen = Fx.MakeSystem("Pollen", root, Mats.ParticleAdd(Tex.Glow), 260);
             motes.transform.localPosition = new Vector3(0f, 3f, 22f);
             var main = motes.main;
             main.startLifetime = new ParticleSystem.MinMaxCurve(4f, 8f);
@@ -378,6 +477,38 @@ namespace JungleEscape
                 ep.rotation = Random.Range(0f, 360f);
                 ep.startColor = new Color(0.62f, 0.52f, 0.40f, 0.45f);
                 dust.Emit(ep, 1);
+            }
+        }
+
+        static ParticleSystem gas;
+
+        /// <summary>A slow, rising puff of toxic green gas (poisonous plants).</summary>
+        public static void Gas(Vector3 pos, int count = 4)
+        {
+            if (gas == null)
+            {
+                gas = MakeSystem("ToxicGas", Root(), Mats.ParticleAlpha(Tex.Puff), 200);
+                var col = gas.colorOverLifetime;
+                col.enabled = true;
+                col.color = FadeInOut();
+                var sz = gas.sizeOverLifetime;
+                sz.enabled = true;
+                sz.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0.5f, 1f, 2.2f));
+                var rot = gas.rotationOverLifetime;
+                rot.enabled = true;
+                rot.z = new ParticleSystem.MinMaxCurve(-0.6f, 0.6f);
+                gas.Play();
+            }
+            var ep = new ParticleSystem.EmitParams { applyShapeToPosition = false };
+            for (int i = 0; i < count; i++)
+            {
+                ep.position = pos + Random.insideUnitSphere * 0.25f;
+                ep.velocity = new Vector3(Random.Range(-0.25f, 0.25f), Random.Range(0.3f, 0.7f), Random.Range(-0.25f, 0.25f));
+                ep.startSize = Random.Range(0.5f, 0.9f);
+                ep.startLifetime = Random.Range(1.6f, 2.6f);
+                ep.rotation = Random.Range(0f, 360f);
+                ep.startColor = new Color(0.45f, 0.9f, 0.25f, 0.35f);
+                gas.Emit(ep, 1);
             }
         }
 

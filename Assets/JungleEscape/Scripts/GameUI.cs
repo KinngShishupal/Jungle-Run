@@ -37,6 +37,46 @@ namespace JungleEscape
                 case GameState.Paused: DrawHud(gm, w, h); DrawPause(gm, w, h); break;
                 case GameState.GameOver: DrawGameOver(gm, w, h); break;
             }
+            if (gm.State == GameState.Playing || gm.State == GameState.Paused) DrawAnnouncement(w, h);
+        }
+
+        // ---------------- New-world announcement ----------------
+
+        static string announceTitle;
+        static Color announceColor;
+        static float announceStart = -100f;
+
+        /// <summary>Flash the screen and show the name of the world the runner just entered.</summary>
+        public static void Announce(string title, Color color)
+        {
+            announceTitle = title;
+            announceColor = color;
+            announceStart = Time.unscaledTime;
+        }
+
+        void DrawAnnouncement(float w, float h)
+        {
+            float t = Time.unscaledTime - announceStart;
+            if (t > 3.2f || announceTitle == null) return;
+
+            // Bright flash that fades out as the new world appears.
+            float flash = Mathf.Clamp01(1f - t / 0.9f);
+            if (flash > 0f)
+            {
+                var c = GUI.color;
+                GUI.color = new Color(Mathf.Lerp(announceColor.r, 1f, 0.5f), Mathf.Lerp(announceColor.g, 1f, 0.5f), Mathf.Lerp(announceColor.b, 1f, 0.5f), flash * flash * 0.85f);
+                GUI.DrawTexture(new Rect(0, 0, w, h), Texture2D.whiteTexture);
+                GUI.color = c;
+            }
+
+            // Title card
+            float a = Mathf.Clamp01(t / 0.35f) * Mathf.Clamp01((3.2f - t) / 0.6f);
+            float rise = (1f - Mathf.Clamp01(t / 0.6f)) * 40f;
+            Shadow(new Rect(0, h * 0.24f + rise, w, 70), "You entered", mid, new Color(1f, 1f, 1f, 0.9f * a));
+            Shadow(new Rect(0, h * 0.24f + 70 + rise, w, 150), announceTitle, big,
+                   new Color(Mathf.Lerp(announceColor.r, 1f, 0.35f), Mathf.Lerp(announceColor.g, 1f, 0.35f), Mathf.Lerp(announceColor.b, 1f, 0.35f), a));
+            Ornament(w / 2, h * 0.24f + 240 + rise, 360);
+            Shadow(new Rect(0, h * 0.24f + 255 + rise, w, 60), "+500 explorer bonus", small, new Color(Gold.r, Gold.g, Gold.b, a));
         }
 
         // ---------------- Screens ----------------

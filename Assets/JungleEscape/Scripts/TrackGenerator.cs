@@ -5,14 +5,18 @@ namespace JungleEscape
 {
     /// <summary>
     /// Builds the endless, winding jungle trail in 50 m chunks ahead of the player and removes
-    /// chunks behind. Chunks are authored in straight "track space" and bent onto
+    /// chunks behind. Chunks are authored in straight "track space" and bent onto a
     /// <see cref="TrackPath"/>. Each chunk gets rows of obstacles, banana trails, the occasional
     /// power-up, and sometimes a landmark: a river crossing, a cave or a rocky pass.
+    ///
+    /// Every so often the trail forks. A signpost on the island between the two paths shows
+    /// where each leads: one continues in the current world, the other enters a new one
+    /// (Ice Age, Fire Jungle, Horror Jungle). The runner's lane at the split decides the path.
     /// </summary>
     public class TrackGenerator : MonoBehaviour
     {
         const float ChunkLength = 50f;
-        const int ChunksAhead = 3;
+        const float ViewAhead = 150f;
         const float SafeStart = 45f;       // obstacle-free run-up at the start
         const float PowerUpChance = 0.07f; // per row
 
@@ -20,6 +24,13 @@ namespace JungleEscape
         const float RiverA = 17.5f, RiverB = 30f;
         const float CaveA = 6f, CaveB = 44f;
         const float WaterLevel = -1.35f;
+        const float SeaLevel = -0.45f;          // water world sea surface, just below the boardwalk
+        static float groundDrop;                // how far the land is sunk (water world)
+
+        // Forks
+        const float ForkTurn = 34f;         // each branch bends this far away from the other
+        const float ForkLength = 100f;      // both branches are built this far before the runner chooses
+        const float ForkEntryClear = 30f;   // obstacle-free stretch at the start of each branch
 
         // Lane contents for a row
         const int Empty = -1;
@@ -28,18 +39,34 @@ namespace JungleEscape
 
         struct Span { public float S0, S1; }
 
+        /// <summary>One trail being generated: its path, world and progress.</summary>
+        class Cursor
+        {
+            public TrackPath Path;
+            public BiomeType Biome;
+            public float Spawn, NextRow;
+            public readonly int[] LastRow = { Empty, Empty, Empty };
+            public int InnerSide;            // side facing the other branch (no scenery there near the fork)
+            public float ForkS = -1e9f;
+        }
+
         static readonly List<Span> rivers = new List<Span>();
 
         readonly List<GameObject> chunks = new List<GameObject>();
         readonly List<float> chunkStarts = new List<float>();
-        readonly int[] lastRow = { Empty, Empty, Empty };
         PlayerController player;
-        float spawnZ;
-        float nextRowZ;
+        Cursor main, forkL, forkR;
+        bool forkPending;
+        float forkS, nextForkS;
+        int newWorldSide;
+        BiomeType nextForkWorld;
+        bool prewarmStarted;
         int chunkIndex;
         Feature lastFeature;
         float birdTimer = 6f;
         float riverLocalA = -100f, riverLocalB = -100f; // river span of the chunk being built
+        BiomeType chunkBiome;                            // world of the chunk being built
+        float trailLift;                                 // keeps overlapping fork trails from flickering
 
         Material shaftMat;
         Mesh shaftMesh, plankMesh, beamMesh, postMesh, stiltMesh, coneMesh, crystalMesh, torchMesh, flameMesh;
@@ -68,40 +95,51 @@ namespace JungleEscape
             chunkStarts.Clear();
             rivers.Clear();
             TrackPath.Reset(Random.Range(1, int.MaxValue));
-            spawnZ = -20f;
-            nextRowZ = SafeStart;
+            Biomes.ResetToJungle();
+            main = new Cursor { Path = TrackPath.Current, Biome = BiomeType.Jungle, Spawn = -20f, NextRow = SafeStart };
+            forkL = forkR = null;
+            forkPending = false;
+            nextForkS = 300f;
+            nextForkWorld = Biomes.PickNext(BiomeType.Jungle);
+            prewarmStarted = false;
             chunkIndex = 0;
             lastFeature = Feature.None;
-            for (int i = 0; i < 3; i++) lastRow[i] = Empty;
-            while (spawnZ < ChunkLength * ChunksAhead) SpawnChunk();
+            Generate(0f);
         }
 
         void Update()
         {
             if (player == null) return;
             float ps = player.TrackS;
-            while (spawnZ < ps + ChunkLength * ChunksAhead) SpawnChunk();
+            Generate(ps);
+            if (forkPending && ps >= forkS) Commit();
+
             // Generous margin: banana trails can extend a little past their chunk's end.
-            while (chunks.Count > 0 && chunkStarts[0] + ChunkLength < ps - 35f)
+            for (int i = chunks.Count - 1; i >= 0; i--)
             {
-                Destroy(chunks[0]);
-                chunks.RemoveAt(0);
-                chunkStarts.RemoveAt(0);
+                if (chunkStarts[i] + ChunkLength >= ps - 35f) continue;
+                Destroy(chunks[i]);
+                chunks.RemoveAt(i);
+                chunkStarts.RemoveAt(i);
             }
             while (rivers.Count > 0 && rivers[0].S1 < ps - 120f) rivers.RemoveAt(0);
 
-            // Flowing water
+            // Flowing water (and lava, and drifting ice)
             float t = Time.time;
             Mats.Water.SetTextureOffset("_BaseMap", new Vector2(t * 0.035f, t * 0.01f));
+            foreach (var m in Biomes.FlowingMaterials)
+                if (m != null) m.SetTextureOffset("_BaseMap", new Vector2(t * 0.012f, t * 0.004f));
 
-            // Now and then a flock of parrots crosses the sky ahead.
-            if (GameManager.I != null && GameManager.I.State == GameState.Playing && (birdTimer -= Time.deltaTime) <= 0f)
+            // Now and then a flock of parrots (bats in the horror jungle, seagulls over the sea) crosses the sky ahead.
+            var world = Biomes.Current;
+            bool flocks = world != BiomeType.IceAge;
+            if (flocks && GameManager.I != null && GameManager.I.State == GameState.Playing && (birdTimer -= Time.deltaTime) <= 0f)
             {
                 birdTimer = Random.Range(8f, 16f);
                 float side = Random.value < 0.5f ? -1f : 1f;
                 Animals.SpawnFlock(TrackPath.Point(ps + Random.Range(45f, 70f), side * 45f, Random.Range(13f, 18f)),
                                    TrackPath.Point(ps + Random.Range(70f, 100f), -side * 45f, Random.Range(14f, 20f)),
-                                   Random.Range(8f, 11f));
+                                   Random.Range(8f, 11f), world == BiomeType.HorrorJungle, world == BiomeType.WaterWorld);
             }
         }
 
@@ -110,10 +148,77 @@ namespace JungleEscape
         {
             foreach (var c in chunks)
                 foreach (var ob in c.GetComponentsInChildren<Obstacle>())
-                    if (ob.S > fromS - 3f && ob.S < fromS + length) ob.Smash();
+                    if (ob.Path == TrackPath.Current && ob.S > fromS - 3f && ob.S < fromS + length) ob.Smash();
         }
 
         // ---------------- Generation ----------------
+
+        /// <summary>Keeps chunks built up to <see cref="ViewAhead"/> metres in front of the runner.</summary>
+        void Generate(float ps)
+        {
+            if (!forkPending)
+            {
+                if (!prewarmStarted && nextForkS - main.Spawn < 260f)
+                {
+                    prewarmStarted = true;
+                    StartCoroutine(Biomes.Prewarm(nextForkWorld));
+                }
+                while (main.Spawn < ps + ViewAhead)
+                {
+                    if (main.Spawn >= nextForkS) { CreateFork(); break; }
+                    SpawnChunk(main);
+                }
+            }
+            if (forkPending)
+            {
+                float limit = Mathf.Min(ps + ViewAhead, forkS + ForkLength);
+                while (forkL.Spawn < limit) SpawnChunk(forkL);
+                while (forkR.Spawn < limit) SpawnChunk(forkR);
+            }
+        }
+
+        /// <summary>The trail splits: one branch stays in this world, the other leads to a new one.</summary>
+        void CreateFork()
+        {
+            forkPending = true;
+            forkS = main.Spawn;
+            newWorldSide = Random.value < 0.5f ? -1 : 1;
+            var left = main.Path.Branch(forkS, -ForkTurn, Random.Range(1, int.MaxValue));
+            var right = main.Path.Branch(forkS, ForkTurn, Random.Range(1, int.MaxValue));
+            forkL = new Cursor
+            {
+                Path = left, Biome = newWorldSide < 0 ? nextForkWorld : main.Biome,
+                Spawn = forkS, NextRow = forkS + ForkEntryClear, InnerSide = 1, ForkS = forkS
+            };
+            forkR = new Cursor
+            {
+                Path = right, Biome = newWorldSide > 0 ? nextForkWorld : main.Biome,
+                Spawn = forkS, NextRow = forkS + ForkEntryClear, InnerSide = -1, ForkS = forkS
+            };
+            var island = ForkIsland.Build(transform, forkS, left, right, forkL.Biome, forkR.Biome, main.Biome);
+            chunks.Add(island);
+            chunkStarts.Add(forkS + 40f);
+        }
+
+        /// <summary>The runner reached the split: their lane decides the path (centre keeps the current world).</summary>
+        void Commit()
+        {
+            forkPending = false;
+            float x = player.TrackX;
+            var stay = newWorldSide < 0 ? forkR : forkL;
+            var chosen = x < -0.6f ? forkL : x > 0.6f ? forkR : stay;
+            TrackPath.SetCurrent(chosen.Path);
+            main = chosen;
+            forkL = forkR = null;
+            if (chosen.Biome != Biomes.Current)
+            {
+                Biomes.Enter(chosen.Biome);
+                if (GameManager.I != null) GameManager.I.OnEnterWorld(chosen.Biome);
+            }
+            nextForkS = forkS + Random.Range(650f, 900f);
+            nextForkWorld = Biomes.PickNext(main.Biome);
+            prewarmStarted = false;
+        }
 
         Feature PickFeature()
         {
@@ -123,26 +228,31 @@ namespace JungleEscape
             return f == lastFeature ? Feature.None : f;
         }
 
-        void SpawnChunk()
+        void SpawnChunk(Cursor c)
         {
-            float s0 = spawnZ;
-            var feature = PickFeature();
+            float s0 = c.Spawn;
+            bool nearFork = s0 < c.ForkS + ForkLength;
+            var feature = nearFork ? Feature.None : PickFeature();
+            if (c.Biome == BiomeType.WaterWorld && feature == Feature.River) feature = Feature.None; // all water already
             if (feature == Feature.River) rivers.Add(new Span { S0 = s0 + RiverA, S1 = s0 + RiverB });
 
-            var chunk = new GameObject("Chunk " + feature);
+            TrackPath.Use(c.Path);
+            var chunk = new GameObject("Chunk " + c.Biome + " " + feature);
             chunk.transform.SetParent(transform, false);
-            BuildScenery(chunk.transform, s0, feature);
+            trailLift = nearFork && c.InnerSide > 0 ? 0.012f : 0f;
+            BuildScenery(chunk.transform, s0, feature, c.Biome, nearFork ? c.InnerSide : 0);
 
             float end = s0 + ChunkLength;
-            while (nextRowZ < end)
+            while (c.NextRow < end)
             {
-                if (!OnBridge(nextRowZ)) BuildRow(chunk.transform, nextRowZ);
-                nextRowZ += RowGap();
+                if (!OnBridge(c.NextRow)) BuildRow(chunk.transform, c.NextRow, c.Biome, c.LastRow);
+                c.NextRow += RowGap();
             }
+            TrackPath.Done();
 
             chunks.Add(chunk);
             chunkStarts.Add(s0);
-            spawnZ = end;
+            c.Spawn = end;
             chunkIndex++;
             lastFeature = feature;
         }
@@ -161,7 +271,7 @@ namespace JungleEscape
         static bool Passable(int t) => t == Empty || Jumpable(t) || t == (int)ObstacleType.Branch;
         static bool Charger(int t) => t == (int)ObstacleType.Boar || t == (int)ObstacleType.Tiger;
 
-        void BuildRow(Transform parent, float z)
+        void BuildRow(Transform parent, float z, BiomeType biome, int[] lastRow)
         {
             float d = Difficulty;
             int[] row = { Empty, Empty, Empty };
@@ -171,7 +281,7 @@ namespace JungleEscape
             if (Random.value < 0.12f * d) blocked = 3;
 
             int[] order = Shuffle(new[] { 0, 1, 2 });
-            for (int i = 0; i < blocked; i++) row[order[i]] = (int)RandomType(d);
+            for (int i = 0; i < blocked; i++) row[order[i]] = (int)RandomType(d, biome);
 
             for (int i = 0; i < 3; i++)
             {
@@ -186,7 +296,11 @@ namespace JungleEscape
             if (!passable) row[order[0]] = Random.value < 0.5f ? Empty : (int)ObstacleType.Log;
 
             for (int i = 0; i < 3; i++)
-                if (row[i] != Empty) Obstacle.Create((ObstacleType)row[i], i - 1, z, parent);
+            {
+                if (row[i] == Empty) continue;
+                var ob = Obstacle.Create((ObstacleType)row[i], i - 1, z, parent, biome);
+                if (!ob.Native) Biomes.RemapRenderers(ob.gameObject, biome); // world-specific animals keep their own look
+            }
 
             PlaceRewards(parent, row, z);
             System.Array.Copy(row, lastRow, 3);
@@ -241,7 +355,7 @@ namespace JungleEscape
             }
         }
 
-        static ObstacleType RandomType(float d)
+        static ObstacleType RandomType(float d, BiomeType biome)
         {
             // Animals join in as the run gets faster.
             float[] w =
@@ -250,7 +364,7 @@ namespace JungleEscape
                 22f,                       // Branch
                 24f,                       // Boulder
                 d > 0.2f ? 10f : 0f,       // Boar
-                d > 0.05f ? 12f : 0f,      // Snake
+                d > 0.05f && biome != BiomeType.IceAge ? 12f : 0f, // Snake (too cold in the ice age)
                 d > 0.4f ? 8f : 0f,        // Tiger
                 d > 0.15f ? 9f : 0f        // Bear
             };
@@ -304,9 +418,12 @@ namespace JungleEscape
 
         bool Blocked(float localZ) => localZ > riverLocalA - 3f && localZ < riverLocalB + 3f;
 
-        void BuildScenery(Transform c, float s0, Feature feature)
+        void BuildScenery(Transform c, float s0, Feature feature, BiomeType biome, int skipSide)
         {
             var owned = c.gameObject.AddComponent<OwnedMeshes>();
+            chunkBiome = biome;
+            // In the water world the land sinks: only sandbars and islands break the surface.
+            groundDrop = biome == BiomeType.WaterWorld ? 1.4f : 0f;
             bool river = feature == Feature.River;
             riverLocalA = river ? RiverA : -100f;
             riverLocalB = river ? RiverB : -100f;
@@ -314,18 +431,26 @@ namespace JungleEscape
             var trail = TrailMesh(s0, river);
             TrackPath.Deform(trail, s0);
             owned.Meshes.Add(trail);
-            Prim.Shape(trail, "Trail", c, Vector3.zero, Vector3.one, Mats.Trail, null, false);
+            Prim.Shape(trail, "Trail", c, new Vector3(0f, trailLift, 0f), Vector3.one, Biomes.Remap(Mats.Trail, biome), null, false);
             for (int s = -1; s <= 1; s += 2)
             {
+                if (s == skipSide) continue; // the other branch of a fork lies this way
                 var ground = GroundMesh(s0, s);
                 TrackPath.Deform(ground, s0);
                 owned.Meshes.Add(ground);
-                Prim.Shape(ground, "Ground", c, Vector3.zero, Vector3.one, Mats.Ground, null, false);
+                Prim.Shape(ground, "Ground", c, new Vector3(0f, -groundDrop, 0f), Vector3.one, Biomes.Remap(Mats.Ground, biome), null, false);
             }
 
             var b = new ChunkBuilder();
             for (int s = -1; s <= 1; s += 2)
             {
+                if (s == skipSide) continue;
+                if (biome == BiomeType.WaterWorld && feature != Feature.Cave)
+                {
+                    WaterScenery(b, s, s0);
+                    JungleWall(b, s, s0);
+                    continue;
+                }
                 switch (feature)
                 {
                     case Feature.Cave:
@@ -345,18 +470,24 @@ namespace JungleEscape
             }
 
             if (river) BuildRiver(b, c, s0, owned);
+            if (biome == BiomeType.WaterWorld) BuildSea(b, c, s0, owned, skipSide);
             if (feature == Feature.Cave) BuildCave(b, c, s0, owned);
             else
             {
-                if (Random.value < 0.55f) Liana(b, Random.Range(5f, 45f));
-                int shafts = Random.Range(1, 4);
+                if (skipSide == 0 && Random.value < 0.55f) Liana(b, Random.Range(5f, 45f));
+                int shafts = biome == BiomeType.HorrorJungle ? 0 : Random.Range(1, 4);
                 for (int i = 0; i < shafts; i++) SunShaft(b, Random.Range(0f, ChunkLength));
             }
-            b.Build(c, s0);
+            if (biome == BiomeType.HorrorJungle)
+            {
+                WatchingEyes(b, s0);
+                ToxicFlora(b, s0, skipSide);
+            }
+            b.Build(c, s0, m => Biomes.Remap(m, biome));
         }
 
         static Vector3 OnGround(float x, float localZ, float s0, float sink = 0.05f) =>
-            new Vector3(x, GroundHeight(x, s0 + localZ) - sink, localZ);
+            new Vector3(x, GroundHeight(x, s0 + localZ) - sink - groundDrop, localZ);
 
         /// <summary>Ferns, grass, broad-leaf plants and stones lining the trail.</summary>
         void EdgePlants(ChunkBuilder b, int s, float s0)
@@ -442,13 +573,67 @@ namespace JungleEscape
         void JungleWall(ChunkBuilder b, int s, float s0)
         {
             for (float z = Random.Range(0f, 3f); z < ChunkLength; z += Random.Range(4.5f, 7f))
-                if (!Blocked(z))
-                    b.Add(Flora.WallTree(Random.Range(0, 4)), OnGround(s * Random.Range(14f, 19f), z, s0, 0.2f),
-                          Random.Range(0f, 360f), Random.Range(0.9f, 1.2f));
+            {
+                var p = OnGround(s * Random.Range(14f, 19f), z, s0, 0.2f);
+                if (!Blocked(z) && AboveWater(p))
+                    b.Add(Flora.WallTree(Random.Range(0, 4)), p, Random.Range(0f, 360f), Random.Range(0.9f, 1.2f));
+            }
             for (float z = Random.Range(0f, 4f); z < ChunkLength; z += Random.Range(6f, 9f))
-                if (!Blocked(z))
-                    b.Add(Flora.WallTree(Random.Range(0, 4)), OnGround(s * Random.Range(22f, 32f), z, s0, 0.2f),
-                          Random.Range(0f, 360f), Random.Range(1.1f, 1.5f));
+            {
+                var p = OnGround(s * Random.Range(22f, 32f), z, s0, 0.2f);
+                if (!Blocked(z) && AboveWater(p))
+                    b.Add(Flora.WallTree(Random.Range(0, 4)), p, Random.Range(0f, 360f), Random.Range(1.1f, 1.5f));
+            }
+        }
+
+        /// <summary>In the water world, only places on dry sand get plants.</summary>
+        static bool AboveWater(Vector3 p) => groundDrop <= 0f || p.y > SeaLevel + 0.15f;
+
+        // ---------------- Water world ----------------
+
+        /// <summary>Palm groves on sandbars and islands, coral rocks breaking the surface near the boardwalk.</summary>
+        void WaterScenery(ChunkBuilder b, int s, float s0)
+        {
+            for (float z = Random.Range(0f, 3f); z < ChunkLength; z += Random.Range(3f, 6f))
+            {
+                var p = OnGround(s * Random.Range(9f, 30f), z, s0, 0.1f);
+                if (!AboveWater(p)) continue;
+                int v = Random.Range(0, 4);
+                float r = Random.value;
+                if (r < 0.55f)
+                {
+                    float yaw = (s < 0 ? 0f : 180f) + Random.Range(-60f, 60f);
+                    b.Add(Flora.Palm(v), p, yaw, Random.Range(0.85f, 1.2f));
+                }
+                else if (r < 0.8f) b.Add(Flora.Bush(v), p, Random.Range(0f, 360f), Random.Range(0.9f, 1.4f));
+                else b.Add(Flora.Tuft(v), p, Random.Range(0f, 360f), Random.Range(1f, 1.6f));
+            }
+            // Coral and limestone rocks in the shallows beside the boardwalk
+            for (float z = Random.Range(0f, 6f); z < ChunkLength; z += Random.Range(6f, 12f))
+            {
+                var p = new Vector3(s * Random.Range(6.5f, 12f), SeaLevel - Random.Range(0.2f, 0.5f), z);
+                b.Add(Flora.Rock(Random.Range(0, 4)), p, Random.Range(0f, 360f), Random.Range(0.8f, 2.2f));
+            }
+        }
+
+        /// <summary>The sea around the boardwalk: water to the horizon, pilings and edge boards.</summary>
+        void BuildSea(ChunkBuilder b, Transform c, float s0, OwnedMeshes owned, int skipSide)
+        {
+            var sea = WaterMesh(s0, -1f, ChunkLength + 1f, SeaLevel);
+            TrackPath.Deform(sea, s0);
+            owned.Meshes.Add(sea);
+            Prim.Shape(sea, "Sea", c, Vector3.zero, Vector3.one, Biomes.Remap(Mats.Water, BiomeType.WaterWorld), null, false);
+
+            for (int s = -1; s <= 1; s += 2)
+            {
+                // Edge board along the boardwalk
+                b.Add(beamMesh, Mats.Planks, Matrix4x4.TRS(new Vector3(s * 5.05f, -0.12f, ChunkLength * 0.5f), Quaternion.identity,
+                      new Vector3(1f, 0.8f, ChunkLength)));
+                if (s == skipSide) continue;
+                // Pilings driven into the sea floor
+                for (float z = 1.5f; z < ChunkLength; z += 3.5f)
+                    b.Add(stiltMesh, Mats.Bark, Matrix4x4.TRS(new Vector3(s * 5.1f, 0.25f, z), Quaternion.Euler(0f, Random.Range(0f, 360f), 0f), Vector3.one));
+            }
         }
 
         // ---------------- River crossing ----------------
@@ -460,7 +645,7 @@ namespace JungleEscape
             var water = WaterMesh(s0, RiverA - 4f, RiverB + 4f);
             TrackPath.Deform(water, s0);
             owned.Meshes.Add(water);
-            Prim.Shape(water, "River", c, Vector3.zero, Vector3.one, Mats.Water, null, false);
+            Prim.Shape(water, "River", c, Vector3.zero, Vector3.one, Biomes.Remap(Mats.Water, chunkBiome), null, false);
 
             // Deck of planks (slightly uneven, like a real rope bridge)
             float a = RiverA - 2.2f, e = RiverB + 2.2f;
@@ -503,7 +688,7 @@ namespace JungleEscape
             }
 
             // Sometimes a crocodile lurks in the water
-            if (Random.value < 0.6f)
+            if (Random.value < 0.6f && (chunkBiome == BiomeType.Jungle || chunkBiome == BiomeType.HorrorJungle))
             {
                 float side = Random.value < 0.5f ? -1f : 1f;
                 Animals.SpawnCrocodile(c, side * Random.Range(9f, 24f), WaterLevel - 0.12f,
@@ -511,7 +696,7 @@ namespace JungleEscape
             }
         }
 
-        static Mesh WaterMesh(float s0, float z0, float z1)
+        static Mesh WaterMesh(float s0, float z0, float z1, float level = WaterLevel)
         {
             var verts = new List<Vector3>();
             var norms = new List<Vector3>();
@@ -525,7 +710,7 @@ namespace JungleEscape
                 {
                     float x = Mathf.Lerp(-44f, 44f, j / (cols - 1f));
                     float z = Mathf.Lerp(z0, z1, i / (rows - 1f));
-                    verts.Add(new Vector3(x, WaterLevel, z));
+                    verts.Add(new Vector3(x, level, z));
                     norms.Add(Vector3.up);
                     uvs.Add(new Vector2(x / 8f, (z + zOff) / 8f));
                 }
@@ -541,7 +726,7 @@ namespace JungleEscape
             var cave = CaveMesh(CaveA, CaveB, s0);
             TrackPath.Deform(cave, s0);
             owned.Meshes.Add(cave);
-            Prim.Shape(cave, "Cave", c, Vector3.zero, Vector3.one, Mats.CaveRock, null, true);
+            Prim.Shape(cave, "Cave", c, Vector3.zero, Vector3.one, Biomes.Remap(Mats.CaveRock, chunkBiome), null, true);
 
             const float a = 7.2f, h = 6.4f;
             // Stalactites high on the ceiling (well above the runner) and stalagmites by the walls
@@ -573,7 +758,7 @@ namespace JungleEscape
                     b.Add(crystalMesh, Mats.Crystal, Matrix4x4.TRS(basePos + new Vector3(Random.Range(-0.3f, 0.3f), 0f, Random.Range(-0.4f, 0.4f)), rot,
                           Vector3.one * Random.Range(0.6f, 1.4f)), false);
                 }
-                AddLight(c, new Color(0.35f, 0.9f, 1f), 2.2f, 8f, side * 5.6f, 1.0f, s0 + z, false);
+                AddLight(c, CrystalLight(chunkBiome), 2.2f, 8f, side * 5.6f, 1.0f, s0 + z, false);
             }
 
             // Torches on the walls
@@ -586,6 +771,87 @@ namespace JungleEscape
                 var flame = Prim.Shape(flameMesh, "TorchFlame", c, Vector3.zero, new Vector3(0.16f, 0.26f, 0.16f), Mats.Flame, null, false);
                 TrackPath.Place(flame.transform, side * 6.45f, 2.38f, s0 + z);
                 AddLight(c, new Color(1f, 0.62f, 0.28f), 3f, 10f, side * 6.0f, 2.5f, s0 + z, true);
+            }
+        }
+
+        static Color CrystalLight(BiomeType b)
+        {
+            switch (b)
+            {
+                case BiomeType.WaterWorld: return new Color(1f, 0.5f, 0.15f);
+                case BiomeType.HorrorJungle: return new Color(0.45f, 1f, 0.55f);
+                default: return new Color(0.35f, 0.9f, 1f);
+            }
+        }
+
+        static Mesh mushroomStem, mushroomCap, podMesh;
+
+        /// <summary>Horror jungle: glowing poison mushrooms and toxic pod clusters along the trail edges.</summary>
+        static void ToxicFlora(ChunkBuilder b, float s0, int skipSide)
+        {
+            if (mushroomStem == null)
+            {
+                mushroomStem = Meshes.Lathe(new[] { new Vector2(0.06f, 0f), new Vector2(0.045f, 0.2f), new Vector2(0.05f, 0.38f), new Vector2(0.001f, 0.4f) }, 8);
+                mushroomCap = Meshes.Lathe(new[] { new Vector2(0.001f, -0.02f), new Vector2(0.2f, -0.02f), new Vector2(0.22f, 0.04f), new Vector2(0.14f, 0.13f), new Vector2(0.001f, 0.16f) }, 12);
+                podMesh = Meshes.Ball(8, 10);
+            }
+            var stem = Mats.Plain(new Color(0.75f, 0.72f, 0.62f), 0.4f);
+            var capGreen = Mats.Emissive("ToxicCapGreen", Tex.Metal, new Color(0.35f, 0.75f, 0.25f), 0.6f, new Color(0.5f, 1.6f, 0.3f));
+            var capViolet = Mats.Emissive("ToxicCapViolet", Tex.Metal, new Color(0.5f, 0.25f, 0.7f), 0.6f, new Color(1.1f, 0.35f, 1.6f));
+            var pod = Mats.Emissive("PoisonPod", Tex.Metal, new Color(0.42f, 0.22f, 0.5f), 0.95f, new Color(0.6f, 1.7f, 0.3f));
+            for (int s = -1; s <= 1; s += 2)
+            {
+                if (s == skipSide) continue;
+                for (float z = Random.Range(0f, 3f); z < ChunkLength; z += Random.Range(2.5f, 5f))
+                {
+                    var basePos = OnGround(s * Random.Range(5.2f, 9f), z, s0, 0f);
+                    if (Random.value < 0.65f)
+                    {
+                        var cap = Random.value < 0.6f ? capGreen : capViolet;
+                        int n = Random.Range(2, 6);
+                        for (int i = 0; i < n; i++)
+                        {
+                            var p = basePos + new Vector3(Random.Range(-0.4f, 0.4f), 0f, Random.Range(-0.4f, 0.4f));
+                            float sc = Random.Range(0.6f, 1.6f);
+                            var rot = Quaternion.Euler(Random.Range(-10f, 10f), Random.Range(0f, 360f), Random.Range(-10f, 10f));
+                            b.Add(mushroomStem, stem, Matrix4x4.TRS(p, rot, Vector3.one * sc), false);
+                            b.Add(mushroomCap, cap, Matrix4x4.TRS(p + rot * (Vector3.up * 0.38f * sc), rot, Vector3.one * sc), false);
+                        }
+                    }
+                    else
+                    {
+                        int n = Random.Range(3, 6);
+                        for (int i = 0; i < n; i++)
+                        {
+                            float sc = Random.Range(0.18f, 0.32f);
+                            var p = basePos + new Vector3(Random.Range(-0.35f, 0.35f), sc * 0.4f, Random.Range(-0.35f, 0.35f));
+                            b.Add(podMesh, pod, Matrix4x4.TRS(p, Quaternion.identity, new Vector3(sc, sc * 1.2f, sc)), false);
+                        }
+                    }
+                }
+            }
+        }
+
+        static Mesh eyeMesh;
+
+        /// <summary>Horror jungle: pairs of glowing eyes watching from the dark undergrowth.</summary>
+        static void WatchingEyes(ChunkBuilder b, float s0)
+        {
+            if (eyeMesh == null) eyeMesh = Meshes.Ball(6, 8);
+            var mat = Mats.Emissive("WatchingEyes", Tex.Metal, new Color(0.6f, 0.9f, 0.3f), 0.9f, new Color(1.6f, 2.4f, 0.4f));
+            int pairs = Random.Range(3, 7);
+            for (int i = 0; i < pairs; i++)
+            {
+                float side = Random.value < 0.5f ? -1f : 1f;
+                float x = side * Random.Range(8f, 22f);
+                float z = Random.Range(0f, ChunkLength);
+                var p = OnGround(x, z, s0, 0f) + Vector3.up * Random.Range(0.5f, 1.8f);
+                float gap = Random.Range(0.12f, 0.22f);
+                var size = new Vector3(0.07f, 0.05f, 0.04f) * Random.Range(0.8f, 1.4f);
+                // Face back toward the trail.
+                var rot = Quaternion.Euler(0f, side > 0 ? -90f : 90f, 0f);
+                b.Add(eyeMesh, mat, Matrix4x4.TRS(p + rot * new Vector3(-gap * 0.5f, 0f, 0f), rot, size), false);
+                b.Add(eyeMesh, mat, Matrix4x4.TRS(p + rot * new Vector3(gap * 0.5f, 0f, 0f), rot, size), false);
             }
         }
 

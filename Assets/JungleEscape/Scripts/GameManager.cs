@@ -155,6 +155,15 @@ namespace JungleEscape
             }
         }
 
+        /// <summary>Took the path into another world at a fork.</summary>
+        public void OnEnterWorld(BiomeType world)
+        {
+            if (State != GameState.Playing) return;
+            Score += 500 * Multiplier;
+            Cam.Shake(0.15f, 0.25f);
+            GameUI.Announce(Biomes.Title(world), Biomes.PortalColor(world));
+        }
+
         /// <summary>Side bump: first one wakes the monkeys, a second one soon after = caught.</summary>
         public void OnStumble()
         {
@@ -174,13 +183,13 @@ namespace JungleEscape
             }
         }
 
-        public void OnCrash(ObstacleType type)
+        public void OnCrash(Obstacle ob)
         {
             if (State != GameState.Playing) return;
             Cam.Shake(0.45f, 0.35f);
             Vibrate();
             Monkeys.Catch();
-            EndRun(CrashMessage(type));
+            EndRun(Creatures.CrashLine(ob.Creature) ?? CrashMessage(ob.Type));
         }
 
         static string CrashMessage(ObstacleType t)

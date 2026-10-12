@@ -6,6 +6,7 @@ Shader "JungleEscape/Backdrop"
     {
         _HazeColor ("Haze", Color) = (0.74, 0.78, 0.64, 1)
         _Haze ("Extra Haze", Range(0, 1)) = 0.15
+        _Tint ("Ridge Tint", Color) = (1, 1, 1, 1)
     }
     SubShader
     {
@@ -20,7 +21,7 @@ Shader "JungleEscape/Backdrop"
             #pragma fragment frag
             #include "UnityCG.cginc"
 
-            half4 _HazeColor;
+            half4 _HazeColor, _Tint;
             half _Haze;
 
             struct appdata
@@ -50,7 +51,7 @@ Shader "JungleEscape/Backdrop"
             half4 frag (v2f i) : SV_Target
             {
                 half amount = saturate(i.color.a * (1 - _Haze));
-                return half4(lerp(_HazeColor.rgb, i.color.rgb, amount), 1);
+                return half4(lerp(_HazeColor.rgb, i.color.rgb * _Tint.rgb, amount), 1);
             }
             ENDCG
         }

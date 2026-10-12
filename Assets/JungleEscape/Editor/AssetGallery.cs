@@ -55,6 +55,22 @@ namespace JungleEscape.EditorTools
                     Shot(r => { Animals.SpawnCrocodile(r, 0f, 0f, 0f, 90f); return r; }, new Vector3(0.3f, -0.6f, 1.2f))
                 }, 4);
 
+                // World-specific creatures: Ice Age, Water World, Horror Jungle
+                EditorUtility.DisplayProgressBar("Asset Gallery", "World creatures", 0.42f);
+                var cv = new Vector3(0.7f, -0.35f, 1.35f);
+                Sheet("3b_world_creatures", new List<Texture2D>
+                {
+                    Shot(r => Obstacle.Create(ObstacleType.Bear, 0, 0f, r, BiomeType.IceAge), cv),         // mammoth
+                    Shot(r => Obstacle.Create(ObstacleType.Boar, 0, 0f, r, BiomeType.IceAge), cv),         // woolly rhino
+                    Shot(r => Obstacle.Create(ObstacleType.Tiger, 0, 0f, r, BiomeType.IceAge), cv),        // sabre-tooth
+                    Shot(r => Obstacle.Create(ObstacleType.Snake, 0, 0f, r, BiomeType.WaterWorld), cv),    // crab
+                    Shot(r => Obstacle.Create(ObstacleType.Boar, 0, 0f, r, BiomeType.WaterWorld), cv),     // crocodile
+                    Shot(r => Obstacle.Create(ObstacleType.Tiger, 0, 0f, r, BiomeType.WaterWorld), cv),    // hippo
+                    Shot(r => Obstacle.Create(ObstacleType.Bear, 0, 0f, r, BiomeType.WaterWorld), cv),     // octopus
+                    Shot(r => Obstacle.Create(ObstacleType.Snake, 0, 0f, r, BiomeType.HorrorJungle), cv),  // spider
+                    Shot(r => Obstacle.Create(ObstacleType.Tiger, 0, 0f, r, BiomeType.HorrorJungle), cv),  // werewolf
+                    Shot(r => Obstacle.Create(ObstacleType.Bear, 0, 0f, r, BiomeType.HorrorJungle), cv)    // ghoul
+                }, 5);
                 EditorUtility.DisplayProgressBar("Asset Gallery", "Pickups", 0.5f);
                 var pkView = new Vector3(0.4f, -0.3f, 1.5f);
                 Sheet("4_pickups", new List<Texture2D>

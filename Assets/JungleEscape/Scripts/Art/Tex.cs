@@ -440,9 +440,71 @@ namespace JungleEscape
 
         // ---------------- Building ----------------
 
+        // ---------------- Biome variants ----------------
+
+        struct Spec
+        {
+            public int W, H;
+            public float Strength;
+            public Painter Paint;
+            public bool Cutout;
+            public TextureWrapMode WrapU, WrapV;
+        }
+
+        static readonly Dictionary<string, Spec> specs = new Dictionary<string, Spec>();
+
+        /// <summary>
+        /// Same texture as <paramref name="baseName"/> but recoloured (e.g. snowy, charred, ghostly).
+        /// The base texture must have been generated at least once.
+        /// </summary>
+        public static Surface Variant(string baseName, string suffix, Func<Color, Color> recolor)
+        {
+            string key = baseName + "_" + suffix;
+            if (surfaces.TryGetValue(key, out var existing) && existing.Albedo != null) return existing;
+            if (!specs.ContainsKey(baseName)) EnsureBase(baseName);
+            if (!specs.TryGetValue(baseName, out var sp)) return surfaces.TryGetValue(baseName, out var b) ? b : default;
+            void Paint(float u, float v, out Color c, out float h)
+            {
+                sp.Paint(u, v, out c, out h);
+                float a = c.a;
+                c = recolor(c);
+                c.a = a;
+            }
+            return Get(key, sp.W, sp.H, sp.Strength / (sp.W / 256f), Paint, sp.Cutout, sp.WrapU, sp.WrapV);
+        }
+
+        public static bool HasSurface(string name) => surfaces.ContainsKey(name);
+
+        /// <summary>Generates a base texture by name (so its recipe is known for variants).</summary>
+        static void EnsureBase(string name)
+        {
+            Surface s;
+            switch (name)
+            {
+                case "Trail": s = Trail; break;
+                case "Ground": s = Ground; break;
+                case "Bark": s = Bark; break;
+                case "PalmBark": s = PalmBark; break;
+                case "Rock": s = Rock; break;
+                case "Leaves": s = Leaves; break;
+                case "Frond": s = Frond; break;
+                case "BroadLeaf": s = BroadLeaf; break;
+                case "Grass": s = Grass; break;
+                case "WoodRings": s = WoodRings; break;
+                case "Planks": s = Planks; break;
+                case "CaveStone": s = CaveStone; break;
+                case "Water": s = Water; break;
+                case "TigerFur": s = TigerFur; break;
+                default: return;
+            }
+            if (s.Albedo == null) Debug.LogWarning("[JungleEscape] Could not generate base texture " + name);
+        }
+
         static Surface Get(string name, int w, int h, float normalStrength, Painter painter, bool cutout = false,
                            TextureWrapMode wrapU = TextureWrapMode.Repeat, TextureWrapMode wrapV = TextureWrapMode.Repeat)
         {
+            if (!specs.ContainsKey(name))
+                specs[name] = new Spec { W = w, H = h, Strength = normalStrength * (w / 256f), Paint = painter, Cutout = cutout, WrapU = wrapU, WrapV = wrapV };
             if (surfaces.TryGetValue(name, out var s) && s.Albedo != null) return s;
 
             var cols = new Color32[w * h];

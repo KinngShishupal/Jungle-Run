@@ -200,11 +200,11 @@ namespace JungleEscape
 
         // ---------------- Ambient: parrots ----------------
 
-        public static void SpawnFlock(Vector3 from, Vector3 to, float speed)
+        public static void SpawnFlock(Vector3 from, Vector3 to, float speed, bool bats = false, bool gulls = false)
         {
             Init();
-            var flock = new GameObject("ParrotFlock").AddComponent<BirdFlock>();
-            flock.Init(from, to, speed, ball);
+            var flock = new GameObject(bats ? "BatSwarm" : "ParrotFlock").AddComponent<BirdFlock>();
+            flock.Init(from, to, speed, ball, bats, gulls);
         }
     }
 
@@ -527,8 +527,8 @@ namespace JungleEscape
 
             // On all fours the arms are front legs (held vertical, stepping); reared up they swipe.
             float frontL = -spineX - 22f * step, frontR = -spineX + 22f * step;
-            float swipeL = -115f + 35f * Mathf.Sin(t * 2.6f);
-            float swipeR = -115f + 35f * Mathf.Sin(t * 2.6f + 2.2f);
+            float swipeL = 115f + 35f * Mathf.Sin(t * 2.6f);
+            float swipeR = 115f + 35f * Mathf.Sin(t * 2.6f + 2.2f);
             ArmL.localRotation = Quaternion.Euler(Mathf.Lerp(frontL, swipeL, rear), 0f, Mathf.Lerp(0f, -28f, rear));
             ArmR.localRotation = Quaternion.Euler(Mathf.Lerp(frontR, swipeR, rear), 0f, Mathf.Lerp(0f, 28f, rear));
             float reach = Mathf.Lerp(1.4f, 1f, rear);
@@ -565,8 +565,9 @@ namespace JungleEscape
         readonly List<Bird> birds = new List<Bird>();
         Vector3 from, to;
         float speed, t, duration;
+        bool isBats;
 
-        public void Init(Vector3 a, Vector3 b, float spd, Mesh ball)
+        public void Init(Vector3 a, Vector3 b, float spd, Mesh ball, bool bats = false, bool gulls = false)
         {
             from = a; to = b; speed = spd;
             duration = Vector3.Distance(a, b) / spd;
@@ -574,10 +575,13 @@ namespace JungleEscape
             {
                 new Color(0.85f, 0.12f, 0.1f), new Color(0.1f, 0.45f, 0.85f), new Color(0.15f, 0.6f, 0.2f), new Color(0.95f, 0.75f, 0.1f)
             };
-            var wingMesh = Meshes.RoundedBox(new Vector3(0.42f, 0.02f, 0.16f), 0.01f);
+            isBats = bats;
+            if (bats) plumage = new[] { new Color(0.06f, 0.05f, 0.05f), new Color(0.12f, 0.09f, 0.08f) };
+            if (gulls) plumage = new[] { new Color(0.95f, 0.95f, 0.93f), new Color(0.85f, 0.86f, 0.88f) };
+            var wingMesh = Meshes.RoundedBox(bats ? new Vector3(0.48f, 0.012f, 0.22f) : new Vector3(0.42f, 0.02f, 0.16f), 0.01f);
             var tail = Meshes.RoundedBox(new Vector3(0.08f, 0.015f, 0.32f), 0.006f);
             var beak = Mats.Plain(new Color(0.15f, 0.13f, 0.12f), 0.5f);
-            int n = Random.Range(4, 8);
+            int n = bats ? Random.Range(8, 14) : Random.Range(4, 8);
             for (int i = 0; i < n; i++)
             {
                 var mat = Mats.Plain(plumage[Random.Range(0, plumage.Length)], 0.45f);
@@ -585,8 +589,8 @@ namespace JungleEscape
                 root.SetParent(transform, false);
                 Prim.Shape(ball, "Body", root, Vector3.zero, new Vector3(0.14f, 0.14f, 0.34f), mat, null, false);
                 Prim.Shape(ball, "Head", root, new Vector3(0f, 0.04f, 0.17f), Vector3.one * 0.11f, mat, null, false);
-                Prim.Shape(ball, "Beak", root, new Vector3(0f, 0.02f, 0.23f), new Vector3(0.04f, 0.05f, 0.05f), beak, null, false);
-                Prim.Shape(tail, "Tail", root, new Vector3(0f, -0.01f, -0.28f), Vector3.one, mat, null, false);
+                if (!bats) Prim.Shape(ball, "Beak", root, new Vector3(0f, 0.02f, 0.23f), new Vector3(0.04f, 0.05f, 0.05f), beak, null, false);
+                if (!bats) Prim.Shape(tail, "Tail", root, new Vector3(0f, -0.01f, -0.28f), Vector3.one, mat, null, false);
                 var wl = Prim.Group("WingL", root, new Vector3(-0.05f, 0.03f, 0f));
                 var wr = Prim.Group("WingR", root, new Vector3(0.05f, 0.03f, 0f));
                 Prim.Shape(wingMesh, "Wing", wl, new Vector3(-0.2f, 0f, 0f), Vector3.one, mat, null, false);
@@ -609,8 +613,9 @@ namespace JungleEscape
             var rot = Quaternion.LookRotation(dir);
             foreach (var b in birds)
             {
-                float flap = Mathf.Sin(Time.time * 14f + b.Phase);
-                b.Root.SetPositionAndRotation(pos + rot * b.Offset + Vector3.up * flap * 0.08f, rot * Quaternion.Euler(-flap * 4f, 0f, 0f));
+                float flap = Mathf.Sin(Time.time * (isBats ? 24f : 14f) + b.Phase);
+                var jitter = isBats ? new Vector3(Mathf.Sin(Time.time * 3.1f + b.Phase * 2f), Mathf.Sin(Time.time * 4.3f + b.Phase), 0f) * 0.6f : Vector3.zero;
+                b.Root.SetPositionAndRotation(pos + rot * (b.Offset + jitter) + Vector3.up * flap * 0.08f, rot * Quaternion.Euler(-flap * 4f, 0f, 0f));
                 b.WingL.localRotation = Quaternion.Euler(0f, 0f, -flap * 45f);
                 b.WingR.localRotation = Quaternion.Euler(0f, 0f, flap * 45f);
             }

@@ -275,7 +275,7 @@ namespace JungleEscape
             }
 
             ob.Handled = true;
-            gm.OnCrash(ob.Type);
+            gm.OnCrash(ob);
         }
 
         // ---------------- Called by GameManager ----------------

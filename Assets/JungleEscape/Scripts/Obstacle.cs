@@ -25,6 +25,14 @@ namespace JungleEscape
         public bool Handled;
         /// <summary>Distance along the trail (track space).</summary>
         public float S;
+        /// <summary>The animal filling this role in its world (None for logs, branches and boulders).</summary>
+        public Creature Creature;
+        /// <summary>The trail this obstacle was placed on (matters at forks).</summary>
+        public TrackPath Path;
+
+        /// <summary>True for world-specific animals, which must not be re-skinned.</summary>
+        public bool Native => Creature != Creature.None && Creature != Creature.Python && Creature != Creature.Boar
+                              && Creature != Creature.Tiger && Creature != Creature.Bear;
 
         bool charging;
         Transform body;
@@ -52,7 +60,7 @@ namespace JungleEscape
 
             float speed = Type == ObstacleType.Tiger ? TigerSpeed : BoarSpeed;
             S -= speed * Time.deltaTime;
-            TrackPath.Place(transform, Lane * PlayerController.LaneWidth, 0f, S);
+            (Path ?? TrackPath.Active).PlaceOn(transform, Lane * PlayerController.LaneWidth, 0f, S);
 
             // Gallop: diagonal leg pairs swing together, body bobs and pitches.
             float t = Time.time * (Type == ObstacleType.Tiger ? 13f : 16f);
@@ -91,7 +99,7 @@ namespace JungleEscape
         // ---------------- Factory ----------------
 
         /// <summary>Creates an obstacle in a lane at distance s along the trail.</summary>
-        public static Obstacle Create(ObstacleType type, int lane, float s, Transform parent)
+        public static Obstacle Create(ObstacleType type, int lane, float s, Transform parent, BiomeType world = BiomeType.Jungle)
         {
             var go = new GameObject(type.ToString());
             go.transform.SetParent(parent, false);
@@ -102,6 +110,8 @@ namespace JungleEscape
             ob.Lane = lane;
             ob.S = s;
             ob.phase = Random.value * 6f;
+            ob.Creature = Creatures.For(type, world);
+            ob.Path = TrackPath.Active;
             var col = go.AddComponent<BoxCollider>();
             var t = go.transform;
             int variant = Random.Range(0, 3);
@@ -111,46 +121,59 @@ namespace JungleEscape
                 case ObstacleType.Log:
                     col.center = new Vector3(0f, 0.4f, 0f);
                     col.size = new Vector3(2.0f, 0.8f, 0.7f);
-                    BuildLog(t, variant);
+                    if (ob.Creature == Creature.PoisonPods) Creatures.BuildPoisonPods(t);
+                    else BuildLog(t, variant);
                     break;
 
                 case ObstacleType.Branch:
                     // Solid from 1.1 m up: standing or jumping hits it, rolling passes under.
                     col.center = new Vector3(0f, 2.3f, 0f);
                     col.size = new Vector3(2.2f, 2.4f, 0.5f);
-                    BuildBranch(t, variant);
+                    if (ob.Creature == Creature.StranglerVines) Creatures.BuildStranglerVines(t);
+                    else BuildBranch(t, variant);
                     break;
 
                 case ObstacleType.Boulder:
                     col.center = new Vector3(0f, 1.5f, 0f);
                     col.size = new Vector3(2.2f, 3.0f, 1.6f);
-                    BuildBoulder(t, variant);
+                    if (ob.Creature == Creature.Flytrap) Creatures.BuildFlytrap(t);
+                    else BuildBoulder(t, variant);
                     break;
 
                 case ObstacleType.Boar:
                     col.center = new Vector3(0f, 0.55f, 0f);
                     col.size = new Vector3(1.2f, 1.0f, 1.7f);
                     MakeMoving(go);
-                    BuildBoar(ob, t);
+                    if (ob.Creature == Creature.WoollyRhino) Creatures.BuildRhino(t, true, out ob.legs, out ob.body);
+                    else if (ob.Creature == Creature.Crocodile) Creatures.BuildCrocodile(t, out ob.legs, out ob.body);
+                    else BuildBoar(ob, t);
                     break;
 
                 case ObstacleType.Snake:
                     col.center = new Vector3(0f, 0.25f, 0f);
                     col.size = new Vector3(2.4f, 0.5f, 0.8f);
-                    Animals.BuildSnake(t);
+                    if (ob.Creature == Creature.Crab) Creatures.BuildCrab(t);
+                    else if (ob.Creature == Creature.Spider) Creatures.BuildSpider(t);
+                    else Animals.BuildSnake(t);
                     break;
 
                 case ObstacleType.Tiger:
                     col.center = new Vector3(0f, 0.65f, 0f);
                     col.size = new Vector3(1.0f, 1.2f, 2.2f);
                     MakeMoving(go);
-                    Animals.BuildTiger(t, out ob.legs, out ob.body);
+                    if (ob.Creature == Creature.Sabertooth) Creatures.BuildBigCat(t, Creatures.CatKind.Sabertooth, out ob.legs, out ob.body);
+                    else if (ob.Creature == Creature.Werewolf) Creatures.BuildBigCat(t, Creatures.CatKind.Werewolf, out ob.legs, out ob.body);
+                    else if (ob.Creature == Creature.Hippo) Creatures.BuildHippo(t, out ob.legs, out ob.body);
+                    else Animals.BuildTiger(t, out ob.legs, out ob.body);
                     break;
 
                 case ObstacleType.Bear:
                     col.center = new Vector3(0f, 1.25f, 0f);
                     col.size = new Vector3(2.0f, 2.5f, 1.2f);
-                    Animals.BuildBear(t);
+                    if (ob.Creature == Creature.Mammoth) Creatures.BuildMammoth(t);
+                    else if (ob.Creature == Creature.Octopus) Creatures.BuildOctopus(t);
+                    else if (ob.Creature == Creature.Ghoul) Creatures.BuildGhoul(t);
+                    else Animals.BuildBear(t);
                     break;
             }
             return ob;
