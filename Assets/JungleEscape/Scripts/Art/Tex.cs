@@ -342,14 +342,22 @@ namespace JungleEscape
         static void PaintBanana(float u, float v, out Color c, out float h)
         {
             float ridges = 0.5f + 0.5f * Mathf.Cos(u * Mathf.PI * 2f * 5f);
-            c = C(0.98f, 0.80f, 0.17f) * (0.9f + 0.1f * ridges);
-            c = Color.Lerp(c, C(0.60f, 0.66f, 0.20f), SS(0.18f, 0.05f, v));
+            // Fine fibres running the length of the peel
+            float fibres = Noise.FbmXY(u, v, 24, 2, 3, 853);
+            c = C(0.98f, 0.80f, 0.17f) * (0.88f + 0.08f * ridges + 0.1f * fibres);
+            // Ridge edges catch a slightly greener, paler tone
+            c = Color.Lerp(c, C(0.93f, 0.86f, 0.36f), Mathf.Pow(ridges, 6f) * 0.35f);
+            c = Color.Lerp(c, C(0.60f, 0.66f, 0.20f), SS(0.2f, 0.05f, v));
             c = Color.Lerp(c, C(0.32f, 0.26f, 0.13f), SS(0.05f, 0.02f, v));
-            c = Color.Lerp(c, C(0.20f, 0.14f, 0.08f), SS(0.94f, 0.98f, v));
+            c = Color.Lerp(c, C(0.20f, 0.14f, 0.08f), SS(0.93f, 0.98f, v));
+            // A few ripe brown patches and many tiny sugar freckles
             Noise.Cells(u, v, 8, 851, out float f1, out _, out float id);
             float spot = id > 0.88f ? SS(0.18f, 0.08f, f1) : 0f;
+            Noise.Cells(u, v, 28, 857, out float g1, out _, out float gid);
+            float freckle = gid > 0.72f ? SS(0.12f, 0.04f, g1) : 0f;
             c = Color.Lerp(c, C(0.55f, 0.38f, 0.12f), spot * 0.5f);
-            h = ridges * 0.6f;
+            c = Color.Lerp(c, C(0.36f, 0.24f, 0.09f), freckle * 0.55f * SS(0.12f, 0.3f, v));
+            h = ridges * 0.6f + fibres * 0.25f - freckle * 0.1f;
         }
 
         static void PaintCoconut(float u, float v, out Color c, out float h)

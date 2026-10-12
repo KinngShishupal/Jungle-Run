@@ -476,7 +476,11 @@ namespace JungleEscape
             }
 
             if (river) BuildRiver(b, c, s0, owned);
-            if (biome == BiomeType.WaterWorld) BuildSea(b, c, s0, owned, skipSide);
+            if (biome == BiomeType.WaterWorld)
+            {
+                BuildSea(b, c, s0, owned, skipSide);
+                if (feature != Feature.Cave) SeaAnimals(c, s0, skipSide);
+            }
             if (feature == Feature.Cave) BuildCave(b, c, s0, owned);
             else
             {
@@ -671,6 +675,66 @@ namespace JungleEscape
             {
                 var p = new Vector3(s * Random.Range(6.5f, 12f), SeaLevel - Random.Range(0.2f, 0.5f), z);
                 b.Add(Flora.Rock(Random.Range(0, 4)), p, Random.Range(0f, 360f), Random.Range(0.8f, 2.2f));
+            }
+        }
+
+
+        /// <summary>True when the sea floor around (x, z) lies well below the surface: no sandbar or island there.</summary>
+        bool OpenWater(float x, float z, float s0, float radius)
+        {
+            for (int i = -1; i <= 1; i++)
+                for (int j = -1; j <= 1; j++)
+                {
+                    float lz = z + j * radius;
+                    if (lz < 0f || lz > ChunkLength) return false;
+                    if (OnGround(x + i * radius, lz, s0, 0f).y > SeaLevel - 0.5f) return false;
+                }
+            return true;
+        }
+
+        /// <summary>Life in the open sea either side of the boardwalk, so the water never feels empty.</summary>
+        void SeaAnimals(Transform c, float s0, int skipSide)
+        {
+            for (int s = -1; s <= 1; s += 2)
+            {
+                if (s == skipSide) continue;
+                float yawAlong = Random.value < 0.5f ? 0f : 180f;
+
+                // Fish jumping in the shallows near the boardwalk (almost always)
+                for (int tries = 0; tries < 3; tries++)
+                {
+                    float x = s * Random.Range(9f, 15f), z = Random.Range(8f, ChunkLength - 8f);
+                    if (OpenWater(x, z, s0, 3f)) { SeaLife.SpawnFishSchool(c, x, SeaLevel, s0 + z, 3f); break; }
+                }
+                // A dolphin pod porpoising alongside the trail
+                if (Random.value < 0.55f)
+                    for (int tries = 0; tries < 4; tries++)
+                    {
+                        float x = s * Random.Range(13f, 22f), z = Random.Range(14f, ChunkLength - 14f);
+                        if (OpenWater(x, z, s0, 9f)) { SeaLife.SpawnDolphins(c, x, SeaLevel, s0 + z, yawAlong, Random.Range(2, 5)); break; }
+                    }
+                // A sea turtle paddling at the surface
+                if (Random.value < 0.45f)
+                    for (int tries = 0; tries < 4; tries++)
+                    {
+                        float x = s * Random.Range(10f, 18f), z = Random.Range(6f, ChunkLength - 6f);
+                        if (OpenWater(x, z, s0, 4.5f)) { SeaLife.SpawnTurtle(c, x, SeaLevel, s0 + z, Random.Range(0f, 360f)); break; }
+                    }
+                // A shark fin circling
+                if (Random.value < 0.3f)
+                    for (int tries = 0; tries < 4; tries++)
+                    {
+                        float x = s * Random.Range(14f, 24f), z = Random.Range(10f, ChunkLength - 10f);
+                        float r = Random.Range(3.5f, 6f);
+                        if (OpenWater(x, z, s0, r + 1.5f)) { SeaLife.SpawnShark(c, x, SeaLevel, s0 + z, r); break; }
+                    }
+                // A whale surfacing far out
+                if (Random.value < 0.22f)
+                    for (int tries = 0; tries < 3; tries++)
+                    {
+                        float x = s * Random.Range(27f, 36f), z = Random.Range(18f, ChunkLength - 18f);
+                        if (OpenWater(x, z, s0, 8f)) { SeaLife.SpawnWhale(c, x, SeaLevel, s0 + z, yawAlong + Random.Range(-20f, 20f)); break; }
+                    }
             }
         }
 
