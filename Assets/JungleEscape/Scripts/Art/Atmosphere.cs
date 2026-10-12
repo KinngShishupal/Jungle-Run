@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -33,6 +34,7 @@ namespace JungleEscape
             SetupPostProcessing();
             SetupCamera(cam);
             SetupAirborneParticles(cam.transform);
+            SetupMountains(cam.transform);
         }
 
         static void SetupSun()
@@ -205,6 +207,62 @@ namespace JungleEscape
 
         // ---------------- Pollen ----------------
 
+        // ---------------- Distant mountains ----------------
+
+        /// <summary>
+        /// Two rings of mountain ridges around the camera (a hazy blue far range and a darker,
+        /// greener near range). They ignore the fog so they stay visible above the tree line.
+        /// </summary>
+        static void SetupMountains(Transform cam)
+        {
+            var root = new GameObject("Mountains");
+            root.AddComponent<FollowCamera>().Target = cam;
+            var mat = Mats.Backdrop;
+            mat.SetColor("_HazeColor", Horizon);
+            AddRidge(root.transform, mat, 158f, 22f, 72f, new Color(0.40f, 0.50f, 0.56f), 0.55f, 101);
+            AddRidge(root.transform, mat, 132f, 10f, 38f, new Color(0.22f, 0.32f, 0.24f), 0.75f, 202);
+        }
+
+        static void AddRidge(Transform parent, Material mat, float radius, float minH, float maxH, Color color, float strength, int seed)
+        {
+            const int steps = 256;
+            var verts = new List<Vector3>();
+            var cols = new List<Color>();
+            var tris = new List<int>();
+            for (int i = 0; i <= steps; i++)
+            {
+                float u = i / (float)steps;
+                float a = u * Mathf.PI * 2f;
+                // Tileable noise around the ring: broad ranges with sharper peaks.
+                float n = Noise.Fbm(u, 0.37f, 5, 5, seed, 0.55f);
+                float peaks = Mathf.Pow(n, 1.6f);
+                float hgt = Mathf.Lerp(minH, maxH, peaks);
+                var dir = new Vector3(Mathf.Sin(a), 0f, Mathf.Cos(a));
+                float shade = 0.82f + 0.36f * Noise.Fbm(u, 0.71f, 24, 3, seed + 9);
+                verts.Add(dir * radius + Vector3.up * -12f);
+                cols.Add(new Color(color.r, color.g, color.b, 0f));                      // base melts into the haze
+                verts.Add(dir * radius + Vector3.up * hgt);
+                cols.Add(new Color(color.r * shade, color.g * shade, color.b * shade, strength));
+                if (i == steps) continue;
+                int b0 = i * 2;
+                tris.Add(b0); tris.Add(b0 + 1); tris.Add(b0 + 2);
+                tris.Add(b0 + 1); tris.Add(b0 + 3); tris.Add(b0 + 2);
+            }
+            var m = new Mesh { name = "Ridge" };
+            m.SetVertices(verts);
+            m.SetColors(cols);
+            m.SetTriangles(tris, 0);
+            m.RecalculateNormals();
+            m.bounds = new Bounds(Vector3.zero, Vector3.one * radius * 2.2f);
+            var go = new GameObject("Ridge");
+            go.transform.SetParent(parent, false);
+            go.AddComponent<MeshFilter>().sharedMesh = m;
+            var r = go.AddComponent<MeshRenderer>();
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = ShadowCastingMode.Off;
+            r.receiveShadows = false;
+        }
+
         static void SetupAirborneParticles(Transform cam)
         {
             var root = new GameObject("Airborne").transform;
@@ -245,7 +303,20 @@ namespace JungleEscape
         {
             if (Target == null) return;
             var p = Target.position;
-            transform.position = new Vector3(0f, 0f, p.z);
+            transform.SetPositionAndRotation(new Vector3(p.x, 0f, p.z), Quaternion.Euler(0f, Target.eulerAngles.y, 0f));
+        }
+    }
+
+    /// <summary>Keeps an object centred on the camera horizontally (used for the mountain rings).</summary>
+    public class FollowCamera : MonoBehaviour
+    {
+        public Transform Target;
+
+        void LateUpdate()
+        {
+            if (Target == null) return;
+            var p = Target.position;
+            transform.position = new Vector3(p.x, 0f, p.z);
         }
     }
 

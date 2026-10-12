@@ -32,6 +32,29 @@ namespace JungleEscape
         public static Material Grass => Cutout("Grass", Tex.Grass, Color.white, 0.2f);
         public static Material WoodEnd => Lit("WoodEnd", Tex.WoodRings, Color.white, 0.15f);
         public static Material Vine => Lit("Vine", Tex.Bark, new Color(0.55f, 0.7f, 0.45f), 0.2f, tiling: new Vector2(1f, 4f));
+        public static Material Water => Lit("Water", Tex.Water, Color.white, 0.93f, tiling: new Vector2(4f, 4f), bump: 0.6f);
+        public static Material Planks => Lit("Planks", Tex.Planks, Color.white, 0.2f);
+        public static Material Rope => Lit("Rope", Tex.Fabric, new Color(0.62f, 0.52f, 0.36f), 0.1f, tiling: new Vector2(1f, 8f));
+        public static Material Crystal => Emissive("Crystal", Tex.Metal, new Color(0.25f, 0.75f, 0.85f), 0.95f, new Color(0.25f, 1.4f, 1.6f));
+        public static Material Flame => Emissive("Flame", Tex.Metal, new Color(1f, 0.6f, 0.2f), 0.1f, new Color(4f, 1.6f, 0.3f));
+        public static Material CaveRock => Lit("CaveRock", Tex.CaveStone, Color.white, 0.38f, bump: 1.4f);
+
+        // ---------------- Animals ----------------
+
+        public static Material SnakeSkin => Lit("SnakeSkin", Tex.SnakeSkin, Color.white, 0.55f, tiling: new Vector2(1f, 6f));
+        public static Material TigerFur => Lit("TigerFur", Tex.TigerFur, Color.white, 0.2f);
+        public static Material CrocSkin => Lit("CrocSkin", Tex.SnakeSkin, new Color(0.42f, 0.5f, 0.32f), 0.4f, tiling: new Vector2(2f, 6f), bump: 1.6f);
+
+        /// <summary>Unlit, fog-free material for the distant mountain ranges.</summary>
+        public static Material Backdrop
+        {
+            get
+            {
+                if (cache.TryGetValue("Backdrop", out var m) && m != null) return m;
+                m = new Material(Template("JE_Backdrop")) { name = "Backdrop" };
+                return cache["Backdrop"] = m;
+            }
+        }
 
         // ---------------- Pickups ----------------
 

@@ -59,7 +59,7 @@ namespace JungleEscape
             gm.Track = track;
             gm.Monkeys = monkeys;
             gm.Cam = follow;
-            track.Init(player.transform);
+            track.Init(player);
 
             gm.GoToMenu();
         }

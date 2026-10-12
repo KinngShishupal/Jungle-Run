@@ -191,6 +191,9 @@ namespace JungleEscape
                 case ObstacleType.Branch: return "Bonked by a branch!";
                 case ObstacleType.Boulder: return "Smacked into a boulder!";
                 case ObstacleType.Boar: return "Flattened by a wild boar!";
+                case ObstacleType.Snake: return "Tangled up with a python!";
+                case ObstacleType.Tiger: return "Pounced on by a tiger!";
+                case ObstacleType.Bear: return "Ran into a bear hug!";
                 default: return "Ouch!";
             }
         }
@@ -222,7 +225,7 @@ namespace JungleEscape
             revives++;
             Save();
 
-            Track.ClearAhead(Player.transform.position.z, 45f);
+            Track.ClearAhead(Player.TrackS, 45f);
             Player.Revive();
             Monkeys.FallBack();
             State = GameState.Playing;

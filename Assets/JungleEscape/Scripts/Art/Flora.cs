@@ -81,13 +81,15 @@ namespace JungleEscape
         public void Add(Model model, Vector3 pos, float yaw, float scale) =>
             Add(model, Matrix4x4.TRS(pos, Quaternion.Euler(0f, yaw, 0f), Vector3.one * scale));
 
-        public void Build(Transform parent)
+        /// <summary>Merges everything and, if a trail distance is given, bends it onto the winding path.</summary>
+        public void Build(Transform parent, float trackS0 = float.NaN)
         {
             var owner = parent.gameObject.GetComponent<OwnedMeshes>();
             if (owner == null) owner = parent.gameObject.AddComponent<OwnedMeshes>();
             foreach (var kv in groups)
             {
                 var mesh = Meshes.Combine(kv.Value, "Batch_" + kv.Key.Item1.name);
+                if (!float.IsNaN(trackS0)) TrackPath.Deform(mesh, trackS0);
                 owner.Meshes.Add(mesh);
                 var go = new GameObject(mesh.name);
                 go.transform.SetParent(parent, false);

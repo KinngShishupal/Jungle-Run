@@ -15,6 +15,8 @@ namespace JungleEscape
         Camera cam;
         float camX, camY;
         float shakeTime, shakeAmount;
+        float camYaw;
+        bool yawInit;
 
         void Awake() => cam = GetComponent<Camera>();
 
@@ -27,12 +29,18 @@ namespace JungleEscape
         void LateUpdate()
         {
             if (Target == null) return;
+            var pc = GameManager.I != null ? GameManager.I.Player : null;
+            if (pc == null) return;
             float dt = Time.unscaledDeltaTime;
-            var t = Target.position;
 
-            camX = Mathf.Lerp(camX, t.x * 0.75f, 1f - Mathf.Exp(-10f * dt));
-            camY = Mathf.Lerp(camY, t.y * 0.6f, 1f - Mathf.Exp(-5f * dt));
-            var pos = new Vector3(camX, Height + camY, t.z - Back);
+            // Follow in track space so the camera swings smoothly around bends.
+            camX = Mathf.Lerp(camX, pc.TrackX * 0.75f, 1f - Mathf.Exp(-10f * dt));
+            camY = Mathf.Lerp(camY, pc.Height * 0.6f, 1f - Mathf.Exp(-5f * dt));
+            float camS = pc.TrackS - Back;
+            float targetYaw = TrackPath.Yaw(pc.TrackS + 6f);   // look slightly into the bend ahead
+            if (!yawInit || Mathf.Abs(Mathf.DeltaAngle(camYaw, targetYaw)) > 60f) { camYaw = targetYaw; yawInit = true; }
+            camYaw = Mathf.LerpAngle(camYaw, targetYaw, 1f - Mathf.Exp(-5f * dt));
+            var pos = TrackPath.Point(camS, camX, Height + camY);
 
             if (shakeTime > 0f)
             {
@@ -42,7 +50,7 @@ namespace JungleEscape
             }
 
             transform.position = pos;
-            transform.rotation = Quaternion.Euler(Pitch, 0f, 0f);
+            transform.rotation = Quaternion.Euler(Pitch, camYaw, 0f);
 
             if (cam != null)
                 cam.fieldOfView = Mathf.Clamp(Camera.HorizontalToVerticalFieldOfView(HorizontalFov, cam.aspect), 50f, 95f);

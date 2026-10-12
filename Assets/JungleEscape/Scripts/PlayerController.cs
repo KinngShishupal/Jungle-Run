@@ -43,7 +43,13 @@ namespace JungleEscape
         public int Lane { get; private set; }
 
         int prevLane;
-        float x, xVel, y, vy;
+        float x, xVel, y, vy, s;
+
+        /// <summary>Distance along the trail (track space).</summary>
+        public float TrackS => s;
+        /// <summary>Sideways offset from the trail centre.</summary>
+        public float TrackX => x;
+        public float Height => y;
         bool grounded = true;
         bool fastFalling;
         float rollTimer;
@@ -129,8 +135,9 @@ namespace JungleEscape
             SetCollider(IsRolling);
 
             // ---- Forward ----
-            float z = transform.position.z + gm.Speed * dt;
-            transform.position = new Vector3(x, y, z);
+            s += gm.Speed * dt;
+            TrackPath.Place(transform, x, y, s);
+            float z = s;
 
             Animate(gm, dt, z);
         }
@@ -183,7 +190,7 @@ namespace JungleEscape
             rollTimer = 0f;
             jumpBufferTimer = 0f;
             landTimer = 0f;
-            Fx.Dust(new Vector3(x, 0f, transform.position.z - 0.1f), 3, 0.5f); // push-off
+            Fx.Dust(Feet(-0.1f), 3, 0.5f); // push-off
         }
 
         void StartRoll()
@@ -202,7 +209,7 @@ namespace JungleEscape
 
             landStrength = Mathf.Clamp01(impactSpeed / 14f);
             landTimer = LandDuration;
-            var feet = new Vector3(x, 0f, transform.position.z);
+            var feet = Feet(0f);
             Fx.Dust(feet, 4 + Mathf.RoundToInt(8f * landStrength), 0.55f + 0.45f * landStrength);
             if (slammed) gm.Cam.Shake(0.12f, 0.1f);
             else if (impactSpeed > 9f) gm.Cam.Shake(0.05f, 0.07f);
@@ -292,7 +299,8 @@ namespace JungleEscape
             invuln = 0f;
             knocked = false;
             for (int i = 0; i < power.Length; i++) power[i] = 0f;
-            transform.position = Vector3.zero;
+            s = 0f;
+            TrackPath.Place(transform, 0f, 0f, 0f);
             SetCollider(false);
             rig.Root.gameObject.SetActive(true);
             rig.Snap(ExplorerRig.Idle(animTime));
@@ -320,8 +328,7 @@ namespace JungleEscape
             rollTimer = 0f;
             power[(int)PickupType.Glider] = 0f;
             invuln = InvulnAfterRevive;
-            var p = transform.position;
-            transform.position = new Vector3(x, 0f, p.z);
+            TrackPath.Place(transform, x, 0f, s);
             wAir = wGlide = 0f;
             rig.Snap(ExplorerRig.Run(runPhase, 0f));
             human?.SnapTo(HumanoidCharacter.Clip.Run);
@@ -363,7 +370,7 @@ namespace JungleEscape
                 if ((rollDustTimer -= dt) <= 0f)
                 {
                     rollDustTimer = 0.05f;
-                    Fx.Dust(new Vector3(x, 0f, z - 0.3f), 1, 0.6f);
+                    Fx.Dust(Feet(-0.3f), 1, 0.6f);
                 }
             }
             else if (runWeight > 0.8f)
@@ -415,13 +422,16 @@ namespace JungleEscape
         }
 
         /// <summary>A small puff each time a foot strikes the ground.</summary>
+        /// <summary>World position on the ground under the player, offset along the trail.</summary>
+        Vector3 Feet(float along) => TrackPath.Point(s + along, x, 0f);
+
         void FootfallDust(float z)
         {
             int step = Mathf.FloorToInt((runPhase - Mathf.PI * 0.5f) / Mathf.PI);
             if (step == lastStep) return;
             lastStep = step;
             float side = (step & 1) == 0 ? -0.1f : 0.1f;
-            Fx.Dust(new Vector3(x + side, 0f, z + 0.15f), 2, 0.42f);
+            Fx.Dust(TrackPath.Point(s + 0.15f, x + side, 0f), 2, 0.42f);
         }
 
         void IdleUpdate(float dt)
@@ -442,8 +452,7 @@ namespace JungleEscape
             {
                 vy -= FallGravity * dt;
                 y = Mathf.Max(0f, y + vy * dt);
-                var p = transform.position;
-                transform.position = new Vector3(x, y, p.z);
+                TrackPath.Place(transform, x, y, s);
             }
 
             float t = Mathf.Clamp01(knockTimer / KnockFallTime);
@@ -455,7 +464,7 @@ namespace JungleEscape
                 if (!knockLanded)
                 {
                     knockLanded = true;
-                    Fx.Dust(transform.position + new Vector3(0f, 0f, -1.2f), 10, 0.9f);
+                    Fx.Dust(Feet(-1.2f), 10, 0.9f);
                 }
             }
 

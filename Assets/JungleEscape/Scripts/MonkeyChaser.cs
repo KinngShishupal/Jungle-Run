@@ -53,8 +53,9 @@ namespace JungleEscape
             float rate = caught ? 6f : 1.5f;
             distance = Mathf.Lerp(distance, target, 1f - Mathf.Exp(-rate * dt));
 
-            var p = player.position;
-            transform.position = new Vector3(p.x * 0.85f, 0f, p.z - distance);
+            var pc = gm.Player;
+            float ms = pc.TrackS - distance;
+            transform.SetPositionAndRotation(TrackPath.Point(ms, pc.TrackX * 0.85f, 0f), TrackPath.Rotation(ms));
 
             // Hop + wave arms
             bool calm = idle || gm.State == GameState.Paused;

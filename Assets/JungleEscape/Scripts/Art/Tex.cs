@@ -44,6 +44,11 @@ namespace JungleEscape
         public static Surface Banana => Get("Banana", 64, 256, 2f, PaintBanana, wrapV: TextureWrapMode.Clamp);
         public static Surface Coconut => Get("Coconut", 128, 128, 6f, PaintCoconut);
         public static Surface Metal => Get("Metal", 64, 64, 1.5f, PaintMetal);
+        public static Surface Water => Get("Water", 256, 256, 2.5f, PaintWater);
+        public static Surface SnakeSkin => Get("SnakeSkin", 256, 256, 4f, PaintSnakeSkin);
+        public static Surface TigerFur => Get("TigerFur", 256, 256, 4f, PaintTigerFur, wrapV: TextureWrapMode.Clamp);
+        public static Surface Planks => Get("Planks", 256, 256, 5f, PaintPlanks);
+        public static Surface CaveStone => Get("CaveStone", 256, 256, 7f, PaintCaveStone);
 
         /// <summary>Soft round sprite for glows, sparkles and pollen.</summary>
         public static Texture2D Glow => Mask("Glow", 64, 64, (u, v) =>
@@ -353,6 +358,72 @@ namespace JungleEscape
             float s2 = Noise.FbmXY(u, v, 48, 6, 2, 871);
             c = Color.Lerp(C(0.24f, 0.15f, 0.08f), C(0.50f, 0.36f, 0.22f), s * 0.75f + s2 * 0.25f);
             h = s * 0.7f + s2 * 0.3f;
+        }
+
+        static void PaintWater(float u, float v, out Color c, out float h)
+        {
+            // Ripples stretched across the flow, plus small chop.
+            float r = Noise.FbmXY(u, v, 3, 8, 4, 901);
+            float chop = Noise.Fbm(u, v, 16, 3, 911);
+            c = Color.Lerp(C(0.05f, 0.12f, 0.11f), C(0.09f, 0.18f, 0.15f), r);
+            h = r * 0.7f + chop * 0.3f;
+        }
+
+        static void PaintSnakeSkin(float u, float v, out Color c, out float h)
+        {
+            // Python: olive-tan base, dark saddle blotches with pale rims, fine scales.
+            Noise.Cells(u, v, 6, 921, out float f1, out float f2, out float id);
+            float blotch = SS(0.42f, 0.3f, f1);
+            float rim = SS(0.5f, 0.42f, f1) * (1f - blotch);
+            Noise.Cells(u, v, 48, 931, out float s1, out float s2, out _);
+            float scale = SS(0f, 0.15f, s2 - s1);
+            float n = Noise.Fbm(u, v, 4, 3, 941);
+            c = Color.Lerp(C(0.50f, 0.44f, 0.27f), C(0.62f, 0.55f, 0.34f), n);
+            c = Color.Lerp(c, C(0.72f, 0.64f, 0.42f), rim * 0.8f);
+            c = Color.Lerp(c, C(0.20f, 0.14f, 0.08f) * (0.8f + 0.4f * id), blotch);
+            c *= 0.8f + 0.2f * scale;
+            h = scale * 0.6f + blotch * 0.2f;
+        }
+
+        static void PaintTigerFur(float u, float v, out Color c, out float h)
+        {
+            // U wraps around the body, V runs belly (0) to back (1): vertical stripes, cream belly.
+            float wob = (Noise.FbmXY(u, v, 6, 3, 3, 951) - 0.5f) * 0.12f;
+            float t = Frac(u * 13f + wob * 6f + v * 0.4f);
+            float width = 0.22f * SS(0.15f, 0.55f, v) * (0.7f + 0.6f * Noise.Fbm(u, v, 8, 2, 961));
+            float stripe = SS(width, width * 0.5f, Mathf.Abs(t - 0.5f) * 2f * 0.5f);
+            float hair = Noise.FbmXY(u, v, 64, 8, 2, 971);
+            c = Color.Lerp(C(0.92f, 0.86f, 0.74f), C(0.86f, 0.46f, 0.13f), SS(0.18f, 0.4f, v));
+            c = Color.Lerp(c, C(0.07f, 0.05f, 0.04f), stripe);
+            c *= 0.85f + 0.3f * hair;
+            h = hair;
+        }
+
+        static void PaintCaveStone(float u, float v, out Color c, out float h)
+        {
+            // Damp, layered cave rock: strata, cracks and mineral streaks (tiles in both directions).
+            float n = Noise.Fbm(u, v, 4, 5, 1001);
+            float strata = Noise.FbmXY(u, v, 2, 10, 3, 1011);
+            Noise.Cells(u, v, 7, 1021, out float f1, out float f2, out _);
+            float crack = SS(0.05f, 0f, f2 - f1) * SS(0.4f, 0.65f, Noise.Fbm(u, v, 5, 2, 1031));
+            float wet = SS(0.55f, 0.8f, Noise.FbmXY(u, v, 8, 2, 3, 1041));
+            c = Color.Lerp(C(0.24f, 0.22f, 0.20f), C(0.46f, 0.42f, 0.37f), n * 0.6f + strata * 0.4f);
+            c = Color.Lerp(c, C(0.40f, 0.30f, 0.20f), SS(0.62f, 0.85f, Noise.Fbm(u, v, 3, 3, 1051)) * 0.4f);
+            c = Color.Lerp(c, c * 0.45f, crack);
+            c *= 1f - 0.25f * wet;
+            h = n * 0.6f + strata * 0.3f - crack * 0.3f;
+        }
+
+        static void PaintPlanks(float u, float v, out Color c, out float h)
+        {
+            float grain = Noise.FbmXY(u, v, 2, 24, 4, 981);
+            float lines = Mathf.Abs(Mathf.Sin((v * 30f + grain * 4f) * Mathf.PI));
+            Noise.Cells(u, v, 5, 991, out float f1, out _, out float id);
+            float knot = id > 0.75f ? SS(0.12f, 0.03f, f1) : 0f;
+            c = Color.Lerp(C(0.36f, 0.25f, 0.15f), C(0.56f, 0.41f, 0.26f), grain * 0.7f + lines * 0.3f);
+            c = Color.Lerp(c, C(0.22f, 0.14f, 0.08f), knot);
+            c *= 0.8f + 0.2f * Noise.Fbm(u, v, 3, 2, 993);
+            h = lines * 0.4f + grain * 0.4f - knot * 0.3f;
         }
 
         static void PaintMetal(float u, float v, out Color c, out float h)

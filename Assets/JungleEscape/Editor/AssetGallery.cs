@@ -48,7 +48,11 @@ namespace JungleEscape.EditorTools
                     Shot(r => Obstacle.Create(ObstacleType.Log, 0, 0f, r), obView),
                     Shot(r => Obstacle.Create(ObstacleType.Branch, 0, 0f, r), obView),
                     Shot(r => Obstacle.Create(ObstacleType.Boulder, 0, 0f, r), obView),
-                    Shot(r => Obstacle.Create(ObstacleType.Boar, 0, 0f, r), new Vector3(-0.9f, -0.4f, 1.3f))
+                    Shot(r => Obstacle.Create(ObstacleType.Boar, 0, 0f, r), new Vector3(-0.9f, -0.4f, 1.3f)),
+                    Shot(r => Obstacle.Create(ObstacleType.Snake, 0, 0f, r), new Vector3(0.6f, -0.7f, 1.2f)),
+                    Shot(r => Obstacle.Create(ObstacleType.Tiger, 0, 0f, r), new Vector3(-0.9f, -0.35f, 1.3f)),
+                    Shot(r => Obstacle.Create(ObstacleType.Bear, 0, 0f, r), new Vector3(0.4f, -0.2f, 1.5f)),
+                    Shot(r => { Animals.SpawnCrocodile(r, 0f, 0f, 0f, 90f); return r; }, new Vector3(0.3f, -0.6f, 1.2f))
                 }, 4);
 
                 EditorUtility.DisplayProgressBar("Asset Gallery", "Pickups", 0.5f);

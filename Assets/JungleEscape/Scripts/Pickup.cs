@@ -55,7 +55,7 @@ namespace JungleEscape
         {
             var go = new GameObject(type.ToString());
             go.transform.SetParent(parent, false);
-            go.transform.position = pos;
+            TrackPath.Place(go.transform, pos.x, pos.y, pos.z); // pos is (sideways, height, distance along trail)
 
             var col = go.AddComponent<SphereCollider>();
             col.isTrigger = true;

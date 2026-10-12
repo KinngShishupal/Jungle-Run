@@ -8,43 +8,71 @@ namespace JungleEscape
         Log,      // low: jump over
         Branch,   // high: roll under
         Boulder,  // tall: change lane
-        Boar      // charges toward you: jump over or dodge
+        Boar,     // charges toward you: jump over or dodge
+        Snake,    // python across the lane: jump over
+        Tiger,    // crouches, then charges fast: jump over or dodge
+        Bear      // lumbers on all fours, rears up as you approach: change lane
     }
 
     public class Obstacle : MonoBehaviour
     {
         const float BoarSpeed = 6f;
-        const float BoarWakeDistance = 40f;
+        const float TigerSpeed = 10f;
+        const float WakeDistance = 40f;
 
         public ObstacleType Type;
         public int Lane;
         public bool Handled;
+        /// <summary>Distance along the trail (track space).</summary>
+        public float S;
 
         bool charging;
         Transform body;
         Transform[] legs;
+        float phase;
+
+        public bool Charges => Type == ObstacleType.Boar || Type == ObstacleType.Tiger;
 
         void Update()
         {
-            if (Type != ObstacleType.Boar || Handled) return;
+            if (Handled) return;
+
+            if (!Charges) return;
             var gm = GameManager.I;
             if (gm == null || gm.State != GameState.Playing) return;
 
-            float gap = transform.position.z - gm.Player.transform.position.z;
-            if (!charging && gap < BoarWakeDistance && gap > 0f) charging = true;
-            if (!charging) return;
+            float gap = S - gm.Player.TrackS;
+            float wake = Type == ObstacleType.Tiger ? WakeDistance * 0.8f : WakeDistance;
+            if (!charging && gap < wake && gap > 0f) charging = true;
+            if (!charging)
+            {
+                if (Type == ObstacleType.Tiger) TigerCrouch();
+                return;
+            }
 
-            transform.position += Vector3.back * (BoarSpeed * Time.deltaTime);
+            float speed = Type == ObstacleType.Tiger ? TigerSpeed : BoarSpeed;
+            S -= speed * Time.deltaTime;
+            TrackPath.Place(transform, Lane * PlayerController.LaneWidth, 0f, S);
 
             // Gallop: diagonal leg pairs swing together, body bobs and pitches.
-            float t = Time.time * 16f;
+            float t = Time.time * (Type == ObstacleType.Tiger ? 13f : 16f);
+            float swing = Type == ObstacleType.Tiger ? 45f : 38f;
             for (int i = 0; i < legs.Length; i++)
             {
-                float phase = (i == 0 || i == 3) ? 0f : Mathf.PI;
-                legs[i].localRotation = Quaternion.Euler(Mathf.Sin(t + phase) * 38f, 0f, 0f);
+                float ph = (i == 0 || i == 3) ? 0f : Mathf.PI;
+                legs[i].localRotation = Quaternion.Euler(Mathf.Sin(t + ph) * swing, 0f, 0f);
             }
-            body.localPosition = new Vector3(0f, Mathf.Abs(Mathf.Sin(t)) * 0.08f, 0f);
-            body.localRotation = Quaternion.Euler(Mathf.Sin(t * 2f) * 2.5f, 0f, 0f);
+            body.localPosition = new Vector3(0f, Mathf.Abs(Mathf.Sin(t)) * (Type == ObstacleType.Tiger ? 0.14f : 0.08f), 0f);
+            body.localRotation = Quaternion.Euler(Mathf.Sin(t * 2f) * 3f, 0f, 0f);
+        }
+
+        void TigerCrouch()
+        {
+            // Low, tense stalk: slow breathing and a twitching tail end.
+            phase += Time.deltaTime;
+            body.localPosition = new Vector3(0f, -0.12f + 0.015f * Mathf.Sin(phase * 2.5f), 0f);
+            body.localRotation = Quaternion.Euler(4f, 0f, 0f);
+            for (int i = 0; i < legs.Length; i++) legs[i].localRotation = Quaternion.Euler(i < 2 ? -15f : 20f, 0f, 0f);
         }
 
         public void Smash()
@@ -62,15 +90,18 @@ namespace JungleEscape
 
         // ---------------- Factory ----------------
 
-        public static Obstacle Create(ObstacleType type, int lane, float z, Transform parent)
+        /// <summary>Creates an obstacle in a lane at distance s along the trail.</summary>
+        public static Obstacle Create(ObstacleType type, int lane, float s, Transform parent)
         {
             var go = new GameObject(type.ToString());
             go.transform.SetParent(parent, false);
-            go.transform.position = new Vector3(lane * PlayerController.LaneWidth, 0f, z);
+            TrackPath.Place(go.transform, lane * PlayerController.LaneWidth, 0f, s);
 
             var ob = go.AddComponent<Obstacle>();
             ob.Type = type;
             ob.Lane = lane;
+            ob.S = s;
+            ob.phase = Random.value * 6f;
             var col = go.AddComponent<BoxCollider>();
             var t = go.transform;
             int variant = Random.Range(0, 3);
@@ -99,13 +130,37 @@ namespace JungleEscape
                 case ObstacleType.Boar:
                     col.center = new Vector3(0f, 0.55f, 0f);
                     col.size = new Vector3(1.2f, 1.0f, 1.7f);
-                    var rb = go.AddComponent<Rigidbody>(); // moving collider
-                    rb.isKinematic = true;
-                    rb.useGravity = false;
+                    MakeMoving(go);
                     BuildBoar(ob, t);
+                    break;
+
+                case ObstacleType.Snake:
+                    col.center = new Vector3(0f, 0.25f, 0f);
+                    col.size = new Vector3(2.4f, 0.5f, 0.8f);
+                    Animals.BuildSnake(t);
+                    break;
+
+                case ObstacleType.Tiger:
+                    col.center = new Vector3(0f, 0.65f, 0f);
+                    col.size = new Vector3(1.0f, 1.2f, 2.2f);
+                    MakeMoving(go);
+                    Animals.BuildTiger(t, out ob.legs, out ob.body);
+                    break;
+
+                case ObstacleType.Bear:
+                    col.center = new Vector3(0f, 1.25f, 0f);
+                    col.size = new Vector3(2.0f, 2.5f, 1.2f);
+                    Animals.BuildBear(t);
                     break;
             }
             return ob;
+        }
+
+        static void MakeMoving(GameObject go)
+        {
+            var rb = go.AddComponent<Rigidbody>(); // moving collider
+            rb.isKinematic = true;
+            rb.useGravity = false;
         }
 
         // ---------------- Visuals ----------------
