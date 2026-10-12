@@ -81,7 +81,7 @@ namespace JungleEscape
                     BiomeType? pick = kb.digit1Key.wasPressedThisFrame ? BiomeType.Jungle
                                     : kb.digit2Key.wasPressedThisFrame ? BiomeType.IceAge
                                     : kb.digit3Key.wasPressedThisFrame ? BiomeType.WaterWorld
-                                    : kb.digit4Key.wasPressedThisFrame ? BiomeType.HorrorJungle
+                                    : kb.digit4Key.wasPressedThisFrame ? BiomeType.Desert
                                     : (BiomeType?)null;
                     if (pick.HasValue) PlayWorld(pick.Value);
                 }

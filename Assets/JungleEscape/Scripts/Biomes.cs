@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace JungleEscape
 {
-    public enum BiomeType { Jungle, IceAge, WaterWorld, HorrorJungle }
+    public enum BiomeType { Jungle, IceAge, WaterWorld, Desert }
 
     /// <summary>Everything about a world's light and air: sky, sun, ambient, fog and colour grade.</summary>
     public class BiomeLook
@@ -37,8 +37,8 @@ namespace JungleEscape
     }
 
     /// <summary>
-    /// The four worlds reachable through portals. The same jungle content is re-skinned per world
-    /// (recoloured textures, tinted fur, glowing lava and embers), and the atmosphere is blended.
+    /// The four worlds, reached by forks in the trail. The same jungle content is re-skinned per world
+    /// (recoloured textures and tinted fur), each world adds its own plants and animals, and the atmosphere is blended.
     /// </summary>
     public static class Biomes
     {
@@ -55,7 +55,7 @@ namespace JungleEscape
             {
                 case BiomeType.IceAge: return "ICE AGE";
                 case BiomeType.WaterWorld: return "WATER WORLD";
-                case BiomeType.HorrorJungle: return "HORROR JUNGLE";
+                case BiomeType.Desert: return "THE DESERT";
                 default: return "THE JUNGLE";
             }
         }
@@ -66,7 +66,7 @@ namespace JungleEscape
             {
                 case BiomeType.IceAge: return new Color(0.45f, 0.85f, 1f);
                 case BiomeType.WaterWorld: return new Color(0.2f, 0.78f, 1f);
-                case BiomeType.HorrorJungle: return new Color(0.45f, 1f, 0.5f);
+                case BiomeType.Desert: return new Color(1f, 0.72f, 0.32f);
                 default: return new Color(0.75f, 1f, 0.4f);
             }
         }
@@ -81,7 +81,7 @@ namespace JungleEscape
 
         // ---------------- Looks ----------------
 
-        static BiomeLook jungle, ice, water, horror;
+        static BiomeLook jungle, ice, water, desert;
 
         public static BiomeLook Look(BiomeType b)
         {
@@ -90,7 +90,7 @@ namespace JungleEscape
             {
                 case BiomeType.IceAge: return ice;
                 case BiomeType.WaterWorld: return water;
-                case BiomeType.HorrorJungle: return horror;
+                case BiomeType.Desert: return desert;
                 default: return jungle;
             }
         }
@@ -125,16 +125,16 @@ namespace JungleEscape
                 ColorFilter = new Color(0.98f, 1f, 1f), SplitShadows = new Color(0.38f, 0.52f, 0.6f), SplitHighlights = new Color(0.58f, 0.55f, 0.48f),
                 Bloom = 0.7f, Vignette = 0.22f, VignetteColor = new Color(0.02f, 0.06f, 0.1f), MountainTint = new Color(0.8f, 1f, 1.15f)
             };
-            // Moonlit night in a glowing green-grey mist: dark and eerie, but everything still reads
-            // as a silhouette against the fog. The moon is behind the runner so faces stay lit.
-            horror = new BiomeLook
+            // Hot desert afternoon: a hard, high sun, a pale washed-out sky fading to a dusty ochre
+            // horizon, warm bounce light off the sand and a long, thin heat haze.
+            desert = new BiomeLook
             {
-                Zenith = new Color(0.07f, 0.1f, 0.15f), Horizon = new Color(0.3f, 0.38f, 0.4f), Haze = new Color(0.27f, 0.34f, 0.33f),
-                Sun = new Color(0.7f, 0.82f, 1f), SunIntensity = 1.5f, SunEuler = new Vector3(40f, -30f, 0f),
-                AmbSky = new Color(0.42f, 0.48f, 0.58f), AmbEquator = new Color(0.3f, 0.35f, 0.36f), AmbGround = new Color(0.17f, 0.18f, 0.17f),
-                FogStart = 14f, FogEnd = 110f, Exposure = 1.0f, Contrast = 12f, Saturation = -12f, Temperature = -8f,
-                ColorFilter = new Color(0.92f, 1f, 0.96f), SplitShadows = new Color(0.38f, 0.5f, 0.47f), SplitHighlights = new Color(0.53f, 0.56f, 0.6f),
-                Bloom = 0.85f, Vignette = 0.3f, VignetteColor = new Color(0f, 0.03f, 0.02f), MountainTint = new Color(0.5f, 0.58f, 0.6f)
+                Zenith = new Color(0.3f, 0.52f, 0.78f), Horizon = new Color(0.93f, 0.84f, 0.68f), Haze = new Color(0.9f, 0.78f, 0.6f),
+                Sun = new Color(1f, 0.93f, 0.8f), SunIntensity = 2.9f, SunEuler = new Vector3(52f, -35f, 0f),
+                AmbSky = new Color(0.7f, 0.74f, 0.82f), AmbEquator = new Color(0.78f, 0.66f, 0.5f), AmbGround = new Color(0.68f, 0.55f, 0.38f),
+                FogStart = 30f, FogEnd = 170f, Exposure = 0.55f, Contrast = 14f, Saturation = 4f, Temperature = 16f,
+                ColorFilter = new Color(1f, 0.97f, 0.9f), SplitShadows = new Color(0.45f, 0.5f, 0.62f), SplitHighlights = new Color(0.66f, 0.55f, 0.4f),
+                Bloom = 0.6f, Vignette = 0.2f, VignetteColor = new Color(0.12f, 0.07f, 0.02f), MountainTint = new Color(1.35f, 1.05f, 0.75f)
             };
         }
 
@@ -201,6 +201,13 @@ namespace JungleEscape
         public static IEnumerator Prewarm(BiomeType b)
         {
             if (b == BiomeType.Jungle) yield break;
+            if (b == BiomeType.Desert)
+            {
+                // The desert's own surfaces (cactus, sandstone, dune sand)
+                _ = Tex.Cactus; yield return null;
+                _ = Tex.Sandstone; yield return null;
+                _ = Tex.Sand; yield return null;
+            }
             foreach (var tex in TexturedFamilies.Keys)
             {
                 string key = tex + "_" + b;
@@ -218,7 +225,7 @@ namespace JungleEscape
             { "Trail", "ground" }, { "Ground", "ground" },
             { "Leaves", "leaf" }, { "Frond", "leaf" }, { "BroadLeaf", "leaf" }, { "Grass", "leaf" },
             { "Bark", "wood" }, { "PalmBark", "wood" }, { "WoodRings", "wood" }, { "Planks", "wood" },
-            { "Rock", "rock" }, { "CaveStone", "rock" }, { "Water", "water" }, { "TigerFur", "tiger" }
+            { "Rock", "rock" }, { "CaveStone", "rock" }, { "Water", "water" }, { "TigerFur", "tiger" }, { "SnakeSkin", "snake" }
         };
 
         // Material name -> texture it uses.
@@ -227,14 +234,14 @@ namespace JungleEscape
             { "Trail", "Trail" }, { "Ground", "Ground" }, { "Bark", "Bark" }, { "Vine", "Bark" }, { "PalmBark", "PalmBark" },
             { "Rock", "Rock" }, { "Canopy", "Leaves" }, { "CanopyDark", "Leaves" }, { "Frond", "Frond" }, { "BroadLeaf", "BroadLeaf" },
             { "Grass", "Grass" }, { "WoodEnd", "WoodRings" }, { "Planks", "Planks" }, { "CaveRock", "CaveStone" },
-            { "Water", "Water" }, { "TigerFur", "TigerFur" }
+            { "Water", "Water" }, { "TigerFur", "TigerFur" }, { "SnakeSkin", "SnakeSkin" }
         };
 
         static Material MakeVariant(Material m, BiomeType b)
         {
             string n = m.name;
             if (n == "Crystal") return Glow(m, b == BiomeType.WaterWorld ? new Color(0.3f, 1.6f, 1.2f)
-                                             : b == BiomeType.HorrorJungle ? new Color(0.4f, 1.7f, 0.6f) : new Color(0.3f, 1.4f, 1.7f));
+                                             : b == BiomeType.Desert ? new Color(1.6f, 1.0f, 0.4f) : new Color(0.3f, 1.4f, 1.7f));
             if (n.StartsWith("Fur") || n.StartsWith("BearFur") || n == "BearMuzzle")
             {
                 var v = new Material(m) { name = n + "_" + b };
@@ -266,8 +273,8 @@ namespace JungleEscape
                         smooth = 0.22f;
                     }
                     break;
-                case BiomeType.HorrorJungle:
-                    if (family == "ground") smooth = 0.35f;
+                case BiomeType.Desert:
+                    if (family == "ground") smooth = 0.12f;   // dry, matte sand
                     if (family == "water") smooth = 0.95f;
                     break;
             }
@@ -316,10 +323,9 @@ namespace JungleEscape
                     return Color.Lerp(c, new Color(0.86f, 0.86f, 0.9f), 0.4f);
                 case BiomeType.WaterWorld:
                     return c;
-                case BiomeType.HorrorJungle:
-                    if (name.StartsWith("BearFur") || name == "BearMuzzle") return new Color(0.07f, 0.06f, 0.06f);
-                    float l = c.grayscale;
-                    return Color.Lerp(c, new Color(l, l, l), 0.6f) * 0.5f;
+                case BiomeType.Desert:
+                    // Sun-faded, sandy coats
+                    return Color.Lerp(c, new Color(0.78f, 0.62f, 0.42f) * (0.6f + c.grayscale), 0.35f);
                 default:
                     return c;
             }
@@ -335,7 +341,7 @@ namespace JungleEscape
             {
                 case BiomeType.IceAge: return c => Ice(family, c);
                 case BiomeType.WaterWorld: return c => Water(family, c);
-                case BiomeType.HorrorJungle: return c => Horror(family, c);
+                case BiomeType.Desert: return c => Desert(family, c);
                 default: return c => c;
             }
         }
@@ -372,17 +378,24 @@ namespace JungleEscape
             }
         }
 
-        static Color Horror(string family, Color c)
+        static Color Desert(string family, Color c)
         {
             float l = c.grayscale;
             switch (family)
             {
-                case "ground": return Color.Lerp(Gray(l), new Color(0.2f, 0.22f, 0.17f), 0.5f) * 0.85f;
-                case "leaf": return Color.Lerp(new Color(0.16f, 0.2f, 0.15f), new Color(0.2f, 0.16f, 0.22f), 0.35f) * (0.7f + 1.5f * l);
-                case "wood": return Gray(l) * 0.85f + new Color(0.04f, 0.04f, 0.03f);
-                case "rock": return Gray(l) * new Color(0.7f, 0.78f, 0.74f);
-                case "water": return new Color(0.02f, 0.04f, 0.035f) * (1f + l);
-                case "tiger": return new Color(0.06f, 0.055f, 0.06f) * (0.8f + 0.6f * l); // black panther
+                // Wind-blown sand: pale gold in the light, warm ochre in the hollows
+                case "ground": return Color.Lerp(new Color(0.7f, 0.52f, 0.32f), new Color(0.96f, 0.84f, 0.62f), Tex.SS(0.08f, 0.5f, l));
+                // Dusty, sun-scorched olive and straw
+                case "leaf": return Color.Lerp(Gray(l) * new Color(1.05f, 1f, 0.75f), new Color(0.62f, 0.6f, 0.38f) * (0.6f + l), 0.55f);
+                // Silver-grey, sun-bleached deadwood
+                case "wood": return Color.Lerp(c, Gray(l) * new Color(1f, 0.95f, 0.86f) + Gray(0.12f), 0.65f);
+                // Banded red-orange sandstone
+                case "rock": return Color.Lerp(new Color(0.55f, 0.28f, 0.16f), new Color(0.92f, 0.66f, 0.44f), Mathf.Clamp01(l * 1.7f));
+                // Oasis pools: clear green-blue
+                case "water": return Color.Lerp(new Color(0.06f, 0.28f, 0.26f), new Color(0.3f, 0.66f, 0.6f), Mathf.Clamp01(l * 2f));
+                case "tiger": return Color.Lerp(new Color(0.62f, 0.46f, 0.26f), new Color(0.86f, 0.72f, 0.5f), l); // tawny
+                // Horned viper: sand-coloured with darker saddles
+                case "snake": return Color.Lerp(new Color(0.42f, 0.32f, 0.2f), new Color(0.86f, 0.74f, 0.54f), Tex.SS(0.1f, 0.45f, l));
                 default: return c;
             }
         }

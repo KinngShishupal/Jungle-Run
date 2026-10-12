@@ -123,7 +123,7 @@ namespace JungleEscape
             Board(sign, -1, 2.75f, leftWorld);
             Board(sign, 1, 2.0f, rightWorld);
 
-            // A lantern so the sign reads even at night in the horror jungle.
+            // A lantern so the sign reads well in every light.
             var lantern = Mats.Emissive("SignLantern", Tex.Metal, new Color(1f, 0.8f, 0.5f), 0.6f, new Color(2.5f, 1.6f, 0.6f));
             Prim.Shape(Meshes.Ball(8, 10), "Lantern", sign, new Vector3(0f, 3.05f, -0.22f), new Vector3(0.16f, 0.22f, 0.16f), lantern, null, false);
             var lightGo = new GameObject("SignLight");

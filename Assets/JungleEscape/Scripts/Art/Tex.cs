@@ -49,6 +49,9 @@ namespace JungleEscape
         public static Surface TigerFur => Get("TigerFur", 256, 256, 4f, PaintTigerFur, wrapV: TextureWrapMode.Clamp);
         public static Surface Planks => Get("Planks", 256, 256, 5f, PaintPlanks);
         public static Surface CaveStone => Get("CaveStone", 256, 256, 7f, PaintCaveStone);
+        public static Surface Cactus => Get("Cactus", 128, 256, 6f, PaintCactus);
+        public static Surface Sandstone => Get("Sandstone", 256, 256, 6f, PaintSandstone);
+        public static Surface Sand => Get("Sand", 256, 256, 3f, PaintSand);
 
         /// <summary>Soft round sprite for glows, sparkles and pollen.</summary>
         public static Texture2D Glow => Mask("Glow", 64, 64, (u, v) =>
@@ -426,6 +429,60 @@ namespace JungleEscape
             h = n * 0.6f + strata * 0.3f - crack * 0.3f;
         }
 
+        static void PaintCactus(float u, float v, out Color c, out float h)
+        {
+            // Twelve ribs around the stem (matching the ribbed geometry), with areoles - felted
+            // spots carrying clusters of spines - running up each rib crest.
+            float rib = 0.5f + 0.5f * Mathf.Cos(u * Mathf.PI * 2f * 12f);
+            float crest = Mathf.Pow(rib, 6f);
+            float streak = Noise.FbmXY(u, v, 12, 3, 3, 1101);
+            c = Color.Lerp(C(0.16f, 0.27f, 0.14f), C(0.36f, 0.5f, 0.3f), rib * 0.75f + streak * 0.25f);
+            // Waxy bloom on the crests, corky scarring low down
+            c = Color.Lerp(c, C(0.5f, 0.6f, 0.44f), crest * 0.35f);
+            c = Color.Lerp(c, C(0.5f, 0.44f, 0.32f), SS(0.62f, 0.85f, Noise.Fbm(u, v, 4, 3, 1111)) * 0.35f);
+            float ru = Mathf.Repeat(u * 12f, 1f) - 0.0f;
+            float dv = Mathf.Repeat(v * 16f, 1f);
+            float du = Mathf.Min(ru, 1f - ru);
+            float areole = SS(0.07f, 0.03f, Mathf.Sqrt(du * du + (dv - 0.5f) * (dv - 0.5f) * 0.6f));
+            float spines = SS(0.11f, 0.06f, Mathf.Sqrt(du * du * 4f + (dv - 0.5f) * (dv - 0.5f) * 0.25f)) * (1f - areole);
+            c = Color.Lerp(c, C(0.82f, 0.78f, 0.66f), areole);
+            c = Color.Lerp(c, C(0.9f, 0.85f, 0.7f), spines * 0.6f);
+            h = rib * 0.7f + areole * 0.4f + spines * 0.2f;
+        }
+
+        static void PaintSandstone(float u, float v, out Color c, out float h)
+        {
+            // Horizontal strata (v runs up the rock): red, orange and cream bands, cross-bedding and pitting.
+            float warp = Noise.FbmXY(u, v, 3, 2, 3, 1201) * 0.08f;
+            float band = Noise.FbmXY(0.5f, v + warp, 1, 12, 3, 1211);
+            float fine = Mathf.Abs(Mathf.Sin((v + warp) * Mathf.PI * 48f));
+            c = Color.Lerp(C(0.58f, 0.27f, 0.15f), C(0.86f, 0.55f, 0.32f), SS(0.3f, 0.6f, band));
+            c = Color.Lerp(c, C(0.93f, 0.8f, 0.62f), SS(0.68f, 0.8f, band));
+            c *= 0.9f + 0.1f * fine;
+            float grain = Noise.Fbm(u, v, 16, 3, 1221);
+            Noise.Cells(u, v, 10, 1231, out float f1, out _, out float id);
+            float pit = id > 0.7f ? SS(0.16f, 0.04f, f1) : 0f;
+            // Dark desert-varnish streaks running down from ledges
+            float varnish = SS(0.6f, 0.85f, Noise.FbmXY(u, v, 10, 1, 3, 1241)) * SS(0.3f, 0.9f, v);
+            c = Color.Lerp(c, C(0.3f, 0.17f, 0.1f), varnish * 0.45f);
+            c = Color.Lerp(c, c * 0.6f, pit);
+            c *= 0.92f + 0.16f * grain;
+            h = band * 0.4f + fine * 0.2f + grain * 0.3f - pit * 0.4f;
+        }
+
+        static void PaintSand(float u, float v, out Color c, out float h)
+        {
+            // Wind ripples: parallel crests, slightly wavy, with darker heavy grains collecting in the troughs.
+            float warp = Noise.Fbm(u, v, 3, 3, 1301) * 0.6f;
+            float ripple = 0.5f + 0.5f * Mathf.Sin((u * 18f + warp * 3f + Noise.Fbm(u, v, 6, 2, 1311) * 0.6f) * Mathf.PI * 2f);
+            float crest = Mathf.Pow(ripple, 3f);
+            float grain = Noise.Fbm(u, v, 32, 2, 1321);
+            c = Color.Lerp(C(0.74f, 0.56f, 0.36f), C(0.96f, 0.84f, 0.64f), 0.35f + 0.5f * ripple + 0.15f * grain);
+            c = Color.Lerp(c, C(0.56f, 0.4f, 0.26f), SS(0.25f, 0.05f, ripple) * 0.35f);
+            c = Color.Lerp(c, C(1f, 0.92f, 0.76f), crest * 0.2f);
+            h = ripple * 0.75f + grain * 0.25f;
+        }
+
         static void PaintPlanks(float u, float v, out Color c, out float h)
         {
             float grain = Noise.FbmXY(u, v, 2, 24, 4, 981);
@@ -503,6 +560,7 @@ namespace JungleEscape
                 case "CaveStone": s = CaveStone; break;
                 case "Water": s = Water; break;
                 case "TigerFur": s = TigerFur; break;
+                case "SnakeSkin": s = SnakeSkin; break;
                 default: return;
             }
             if (s.Albedo == null) Debug.LogWarning("[JungleEscape] Could not generate base texture " + name);

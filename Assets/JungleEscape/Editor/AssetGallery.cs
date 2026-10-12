@@ -41,6 +41,13 @@ namespace JungleEscape.EditorTools
                     ModelShot(Flora.Bush(0), view), ModelShot(Flora.Tuft(0), view), ModelShot(Flora.Rock(0), view), ModelShot(Flora.Rock(1), view)
                 }, 4);
 
+                Sheet("2b_desert_plants", new List<Texture2D>
+                {
+                    ModelShot(Flora.Saguaro(0), view), ModelShot(Flora.Saguaro(1), view), ModelShot(Flora.BarrelCactus(0), view), ModelShot(Flora.PricklyPear(0), view),
+                    ModelShot(Flora.Agave(0), view), ModelShot(Flora.DesertShrub(0), view), ModelShot(Flora.DeadTree(0), view), ModelShot(Flora.Hoodoo(0), view),
+                    ModelShot(Flora.SandstoneRock(0), view), ModelShot(Flora.Skull(0), view), ModelShot(Flora.Tumbleweed(0), view), ModelShot(Flora.Dune(0), view)
+                }, 4);
+
                 EditorUtility.DisplayProgressBar("Asset Gallery", "Obstacles", 0.35f);
                 var obView = new Vector3(0.8f, -0.4f, 1.5f);
                 Sheet("3_obstacles", new List<Texture2D>
@@ -55,7 +62,7 @@ namespace JungleEscape.EditorTools
                     Shot(r => { Animals.SpawnCrocodile(r, 0f, 0f, 0f, 90f); return r; }, new Vector3(0.3f, -0.6f, 1.2f))
                 }, 4);
 
-                // World-specific creatures: Ice Age, Water World, Horror Jungle
+                // World-specific creatures: Ice Age, Water World, Desert
                 EditorUtility.DisplayProgressBar("Asset Gallery", "World creatures", 0.42f);
                 var cv = new Vector3(0.7f, -0.35f, 1.35f);
                 Sheet("3b_world_creatures", new List<Texture2D>
@@ -67,9 +74,10 @@ namespace JungleEscape.EditorTools
                     Shot(r => Obstacle.Create(ObstacleType.Boar, 0, 0f, r, BiomeType.WaterWorld), cv),     // crocodile
                     Shot(r => Obstacle.Create(ObstacleType.Tiger, 0, 0f, r, BiomeType.WaterWorld), cv),    // hippo
                     Shot(r => Obstacle.Create(ObstacleType.Bear, 0, 0f, r, BiomeType.WaterWorld), cv),     // octopus
-                    Shot(r => Obstacle.Create(ObstacleType.Snake, 0, 0f, r, BiomeType.HorrorJungle), cv),  // spider
-                    Shot(r => Obstacle.Create(ObstacleType.Tiger, 0, 0f, r, BiomeType.HorrorJungle), cv),  // werewolf
-                    Shot(r => Obstacle.Create(ObstacleType.Bear, 0, 0f, r, BiomeType.HorrorJungle), cv)    // ghoul
+                    Shot(r => { var g = new GameObject("Scorpion").transform; g.SetParent(r, false); Creatures.BuildScorpion(g); return g; }, cv),
+                    Shot(r => Obstacle.Create(ObstacleType.Boar, 0, 0f, r, BiomeType.Desert), cv),   // ostrich
+                    Shot(r => Obstacle.Create(ObstacleType.Tiger, 0, 0f, r, BiomeType.Desert), cv),  // lion
+                    Shot(r => Obstacle.Create(ObstacleType.Bear, 0, 0f, r, BiomeType.Desert), cv)    // camel
                 }, 5);
                 EditorUtility.DisplayProgressBar("Asset Gallery", "Pickups", 0.5f);
                 var pkView = new Vector3(0.4f, -0.3f, 1.5f);

@@ -11,7 +11,7 @@ namespace JungleEscape
     ///
     /// Every so often the trail forks. A signpost on the island between the two paths shows
     /// where each leads: one continues in the current world, the other enters a new one
-    /// (Ice Age, Fire Jungle, Horror Jungle). The runner's lane at the split decides the path.
+    /// (Ice Age, Water World, Desert). The runner's lane at the split decides the path.
     /// </summary>
     public class TrackGenerator : MonoBehaviour
     {
@@ -91,6 +91,7 @@ namespace JungleEscape
         public void ResetTrack()
         {
             foreach (var c in chunks) if (c != null) Destroy(c);
+            DesertLife.ClearRoaming();
             chunks.Clear();
             chunkStarts.Clear();
             rivers.Clear();
@@ -131,16 +132,16 @@ namespace JungleEscape
             foreach (var m in Biomes.FlowingMaterials)
                 if (m != null) m.SetTextureOffset("_BaseMap", new Vector2(t * 0.012f, t * 0.004f));
 
-            // Now and then a flock of parrots (bats in the horror jungle, seagulls over the sea) crosses the sky ahead.
+            // Now and then a flock of parrots (seagulls over the sea) crosses the sky ahead.
             var world = Biomes.Current;
-            bool flocks = world != BiomeType.IceAge;
+            bool flocks = world == BiomeType.Jungle || world == BiomeType.WaterWorld; // the desert has circling vultures instead
             if (flocks && GameManager.I != null && GameManager.I.State == GameState.Playing && (birdTimer -= Time.deltaTime) <= 0f)
             {
                 birdTimer = Random.Range(8f, 16f);
                 float side = Random.value < 0.5f ? -1f : 1f;
                 Animals.SpawnFlock(TrackPath.Point(ps + Random.Range(45f, 70f), side * 45f, Random.Range(13f, 18f)),
                                    TrackPath.Point(ps + Random.Range(70f, 100f), -side * 45f, Random.Range(14f, 20f)),
-                                   Random.Range(8f, 11f), world == BiomeType.HorrorJungle, world == BiomeType.WaterWorld);
+                                   Random.Range(8f, 11f), false, world == BiomeType.WaterWorld);
             }
         }
 
@@ -446,6 +447,11 @@ namespace JungleEscape
             for (int s = -1; s <= 1; s += 2)
             {
                 if (s == skipSide) continue;
+                if (biome == BiomeType.Desert)
+                {
+                    DesertScenery(b, s, s0, feature);
+                    continue;
+                }
                 if (biome == BiomeType.IceAge && feature != Feature.Cave)
                 {
                     IceScenery(b, s, s0, feature == Feature.RockyPass);
@@ -484,16 +490,12 @@ namespace JungleEscape
             if (feature == Feature.Cave) BuildCave(b, c, s0, owned);
             else
             {
-                bool vines = biome == BiomeType.Jungle || biome == BiomeType.HorrorJungle;
+                bool vines = biome == BiomeType.Jungle;
                 if (vines && skipSide == 0 && Random.value < 0.55f) Liana(b, Random.Range(5f, 45f));
-                int shafts = biome == BiomeType.HorrorJungle ? 0 : Random.Range(1, 4);
+                int shafts = biome == BiomeType.Desert ? 0 : Random.Range(1, 4);
                 for (int i = 0; i < shafts; i++) SunShaft(b, Random.Range(0f, ChunkLength));
             }
-            if (biome == BiomeType.HorrorJungle)
-            {
-                WatchingEyes(b, s0);
-                ToxicFlora(b, s0, skipSide);
-            }
+            if (biome == BiomeType.Desert) DesertAnimals(c, s0, skipSide, feature);
             b.Build(c, s0, m => Biomes.Remap(m, biome));
         }
 
@@ -599,6 +601,102 @@ namespace JungleEscape
 
         /// <summary>In the water world, only places on dry sand get plants.</summary>
         static bool AboveWater(Vector3 p) => groundDrop <= 0f || p.y > SeaLevel + 0.15f;
+
+        // ---------------- Desert ----------------
+
+        /// <summary>
+        /// Sonoran-style desert: dry grass, barrel cactus, agave, prickly pear, shrubs and the odd bleached skull
+        /// by the trail; saguaros and dead trees further out; rippled dunes and sandstone buttes on the horizon.
+        /// Rocky passes become sandstone hoodoos; a river becomes a palm-fringed oasis.
+        /// </summary>
+        void DesertScenery(ChunkBuilder b, int s, float s0, Feature feature)
+        {
+            bool cave = feature == Feature.Cave, pass = feature == Feature.RockyPass;
+            if (!cave)
+            {
+                // Trail edge
+                for (float z = Random.Range(0f, 1.5f); z < ChunkLength; z += Random.Range(1.3f, 2.6f))
+                {
+                    if (Blocked(z)) continue;
+                    int v = Random.Range(0, 4);
+                    float yaw = Random.Range(0f, 360f);
+                    float r = Random.value;
+                    if (r < 0.28f) b.Add(Flora.Tuft(v), OnGround(s * Random.Range(4.6f, 6.6f), z, s0, 0.02f), yaw, Random.Range(0.8f, 1.3f));
+                    else if (r < 0.42f) b.Add(Flora.SandstoneRock(v), OnGround(s * Random.Range(5.5f, 7.5f), z, s0, 0.12f), yaw, Random.Range(0.35f, 0.8f));
+                    else if (r < 0.56f) b.Add(Flora.BarrelCactus(v), OnGround(s * Random.Range(5.4f, 7.4f), z, s0, 0.04f), yaw, Random.Range(0.8f, 1.2f));
+                    else if (r < 0.68f) b.Add(Flora.Agave(v), OnGround(s * Random.Range(5.8f, 8f), z, s0, 0.02f), yaw, Random.Range(0.8f, 1.2f));
+                    else if (r < 0.8f) b.Add(Flora.DesertShrub(v), OnGround(s * Random.Range(5.5f, 8f), z, s0, 0.02f), yaw, Random.Range(0.8f, 1.3f));
+                    else if (r < 0.9f) b.Add(Flora.PricklyPear(v), OnGround(s * Random.Range(6f, 8f), z, s0, 0.02f), yaw, Random.Range(0.9f, 1.3f));
+                    else if (r < 0.95f) b.Add(Flora.Skull(v), OnGround(s * Random.Range(5f, 6.5f), z, s0, 0.06f), yaw, Random.Range(0.9f, 1.2f));
+                    else b.Add(Flora.Tumbleweed(v), OnGround(s * Random.Range(5.5f, 7.5f), z, s0, 0.05f), yaw, Random.Range(0.8f, 1.1f));
+                }
+
+                // Middle distance: saguaro, big prickly pear, dead trees (hoodoos and boulders in a pass)
+                for (float z = Random.Range(0f, 3f); z < ChunkLength; z += Random.Range(3.5f, 6.5f))
+                {
+                    if (Blocked(z)) continue;
+                    float x = s * Random.Range(8.5f, 14f);
+                    int v = Random.Range(0, 4);
+                    float yaw = Random.Range(0f, 360f);
+                    if (pass)
+                    {
+                        if (Random.value < 0.55f) b.Add(Flora.Hoodoo(v), OnGround(x, z, s0, 0.3f), yaw, Random.Range(0.8f, 1.3f));
+                        else { float sc = Random.Range(2f, 4f); b.Add(Flora.SandstoneRock(v), OnGround(x, z, s0, sc * 0.25f), yaw, sc); }
+                        continue;
+                    }
+                    float r = Random.value;
+                    if (r < 0.5f) b.Add(Flora.Saguaro(v), OnGround(x, z, s0, 0.05f), yaw, Random.Range(0.85f, 1.15f));
+                    else if (r < 0.64f) b.Add(Flora.PricklyPear(v), OnGround(x, z, s0, 0.02f), yaw, Random.Range(1.3f, 1.8f));
+                    else if (r < 0.76f) b.Add(Flora.DeadTree(v), OnGround(x, z, s0, 0.05f), yaw, Random.Range(0.9f, 1.3f));
+                    else if (r < 0.9f) b.Add(Flora.DesertShrub(v), OnGround(x, z, s0, 0.02f), yaw, Random.Range(1.2f, 1.7f));
+                    else b.Add(Flora.Hoodoo(v), OnGround(x, z, s0, 0.3f), yaw, Random.Range(0.5f, 0.8f));
+                }
+            }
+
+            // Far: saguaro scattered over the flats, rippled dunes, and buttes on the skyline
+            for (float z = Random.Range(0f, 4f); z < ChunkLength; z += Random.Range(5f, 9f))
+                if (!Blocked(z))
+                    b.Add(Flora.Saguaro(Random.Range(0, 4)), OnGround(s * Random.Range(15f, 26f), z, s0, 0.05f), Random.Range(0f, 360f), Random.Range(0.9f, 1.3f));
+            for (float z = Random.Range(0f, 8f); z < ChunkLength; z += Random.Range(9f, 15f))
+                b.Add(Flora.Dune(Random.Range(0, 4)), OnGround(s * Random.Range(17f, 36f), z, s0, 0.6f), Random.Range(-25f, 25f), Random.Range(0.9f, 1.6f));
+            if (Random.value < 0.4f)
+            {
+                float z = Random.Range(5f, ChunkLength - 5f);
+                b.Add(Flora.Hoodoo(Random.Range(0, 4)), OnGround(s * Random.Range(28f, 38f), z, s0, 0.5f), Random.Range(0f, 360f), Random.Range(2.2f, 3.6f));
+            }
+
+            // Oasis: date palms, reeds and shrubs around the water
+            if (feature == Feature.River)
+                for (int i = 0; i < 6; i++)
+                {
+                    bool before = i % 2 == 0;
+                    float z = before ? riverLocalA - 3.2f - Random.Range(0f, 4f) : riverLocalB + 3.2f + Random.Range(0f, 4f);
+                    var p = OnGround(s * Random.Range(5.5f, 14f), z, s0, 0.1f);
+                    if (i < 4) b.Add(Flora.Palm(Random.Range(0, 4)), p, (s < 0 ? 0f : 180f) + Random.Range(-60f, 60f), Random.Range(0.8f, 1.1f));
+                    else b.Add(Flora.Tuft(Random.Range(0, 4)), p, Random.Range(0f, 360f), Random.Range(1.3f, 1.8f));
+                }
+        }
+
+        /// <summary>Desert wildlife around the trail: tumbleweeds, circling vultures, a camel caravan, racing ostriches.</summary>
+        void DesertAnimals(Transform c, float s0, int skipSide, Feature feature)
+        {
+            int side = skipSide != 0 ? -skipSide : (Random.value < 0.5f ? -1 : 1);
+            if (Random.value < 0.6f)
+            {
+                // Blown across the trail by the wind
+                float wind = Random.value < 0.5f ? -1f : 1f;
+                int n = Random.Range(1, 3);
+                for (int i = 0; i < n; i++)
+                    DesertLife.SpawnTumbleweed(c, wind * -Random.Range(9f, 18f), s0 + Random.Range(5f, ChunkLength - 5f), wind);
+            }
+            if (Random.value < 0.3f)
+                DesertLife.SpawnVultures(c, side * Random.Range(8f, 26f), Random.Range(20f, 32f), s0 + Random.Range(10f, ChunkLength - 10f));
+            if (feature == Feature.Cave) return;
+            if (Random.value < 0.14f)
+                DesertLife.SpawnCaravan(transform, side * Random.Range(19f, 26f), s0 + Random.Range(10f, 30f), Random.value < 0.5f ? 1f : -1f, Random.Range(3, 6));
+            else if (Random.value < 0.16f)
+                DesertLife.SpawnOstriches(transform, side * Random.Range(11f, 17f), s0 + Random.Range(20f, 40f), Random.Range(2, 4));
+        }
 
         // ---------------- Ice Age ----------------
 
@@ -810,7 +908,7 @@ namespace JungleEscape
             }
 
             // Sometimes a crocodile lurks in the water
-            if (Random.value < 0.6f && (chunkBiome == BiomeType.Jungle || chunkBiome == BiomeType.HorrorJungle))
+            if (Random.value < 0.6f && chunkBiome == BiomeType.Jungle)
             {
                 float side = Random.value < 0.5f ? -1f : 1f;
                 Animals.SpawnCrocodile(c, side * Random.Range(9f, 24f), WaterLevel - 0.12f,
@@ -901,79 +999,8 @@ namespace JungleEscape
             switch (b)
             {
                 case BiomeType.WaterWorld: return new Color(1f, 0.5f, 0.15f);
-                case BiomeType.HorrorJungle: return new Color(0.45f, 1f, 0.55f);
+                case BiomeType.Desert: return new Color(1f, 0.7f, 0.35f);
                 default: return new Color(0.35f, 0.9f, 1f);
-            }
-        }
-
-        static Mesh mushroomStem, mushroomCap, podMesh;
-
-        /// <summary>Horror jungle: glowing poison mushrooms and toxic pod clusters along the trail edges.</summary>
-        static void ToxicFlora(ChunkBuilder b, float s0, int skipSide)
-        {
-            if (mushroomStem == null)
-            {
-                mushroomStem = Meshes.Lathe(new[] { new Vector2(0.06f, 0f), new Vector2(0.045f, 0.2f), new Vector2(0.05f, 0.38f), new Vector2(0.001f, 0.4f) }, 8);
-                mushroomCap = Meshes.Lathe(new[] { new Vector2(0.001f, -0.02f), new Vector2(0.2f, -0.02f), new Vector2(0.22f, 0.04f), new Vector2(0.14f, 0.13f), new Vector2(0.001f, 0.16f) }, 12);
-                podMesh = Meshes.Ball(8, 10);
-            }
-            var stem = Mats.Plain(new Color(0.75f, 0.72f, 0.62f), 0.4f);
-            var capGreen = Mats.Emissive("ToxicCapGreen", Tex.Metal, new Color(0.35f, 0.75f, 0.25f), 0.6f, new Color(0.5f, 1.6f, 0.3f));
-            var capViolet = Mats.Emissive("ToxicCapViolet", Tex.Metal, new Color(0.5f, 0.25f, 0.7f), 0.6f, new Color(1.1f, 0.35f, 1.6f));
-            var pod = Mats.Emissive("PoisonPod", Tex.Metal, new Color(0.42f, 0.22f, 0.5f), 0.95f, new Color(0.6f, 1.7f, 0.3f));
-            for (int s = -1; s <= 1; s += 2)
-            {
-                if (s == skipSide) continue;
-                for (float z = Random.Range(0f, 3f); z < ChunkLength; z += Random.Range(2.5f, 5f))
-                {
-                    var basePos = OnGround(s * Random.Range(5.2f, 9f), z, s0, 0f);
-                    if (Random.value < 0.65f)
-                    {
-                        var cap = Random.value < 0.6f ? capGreen : capViolet;
-                        int n = Random.Range(2, 6);
-                        for (int i = 0; i < n; i++)
-                        {
-                            var p = basePos + new Vector3(Random.Range(-0.4f, 0.4f), 0f, Random.Range(-0.4f, 0.4f));
-                            float sc = Random.Range(0.6f, 1.6f);
-                            var rot = Quaternion.Euler(Random.Range(-10f, 10f), Random.Range(0f, 360f), Random.Range(-10f, 10f));
-                            b.Add(mushroomStem, stem, Matrix4x4.TRS(p, rot, Vector3.one * sc), false);
-                            b.Add(mushroomCap, cap, Matrix4x4.TRS(p + rot * (Vector3.up * 0.38f * sc), rot, Vector3.one * sc), false);
-                        }
-                    }
-                    else
-                    {
-                        int n = Random.Range(3, 6);
-                        for (int i = 0; i < n; i++)
-                        {
-                            float sc = Random.Range(0.18f, 0.32f);
-                            var p = basePos + new Vector3(Random.Range(-0.35f, 0.35f), sc * 0.4f, Random.Range(-0.35f, 0.35f));
-                            b.Add(podMesh, pod, Matrix4x4.TRS(p, Quaternion.identity, new Vector3(sc, sc * 1.2f, sc)), false);
-                        }
-                    }
-                }
-            }
-        }
-
-        static Mesh eyeMesh;
-
-        /// <summary>Horror jungle: pairs of glowing eyes watching from the dark undergrowth.</summary>
-        static void WatchingEyes(ChunkBuilder b, float s0)
-        {
-            if (eyeMesh == null) eyeMesh = Meshes.Ball(6, 8);
-            var mat = Mats.Emissive("WatchingEyes", Tex.Metal, new Color(0.6f, 0.9f, 0.3f), 0.9f, new Color(1.6f, 2.4f, 0.4f));
-            int pairs = Random.Range(3, 7);
-            for (int i = 0; i < pairs; i++)
-            {
-                float side = Random.value < 0.5f ? -1f : 1f;
-                float x = side * Random.Range(8f, 22f);
-                float z = Random.Range(0f, ChunkLength);
-                var p = OnGround(x, z, s0, 0f) + Vector3.up * Random.Range(0.5f, 1.8f);
-                float gap = Random.Range(0.12f, 0.22f);
-                var size = new Vector3(0.07f, 0.05f, 0.04f) * Random.Range(0.8f, 1.4f);
-                // Face back toward the trail.
-                var rot = Quaternion.Euler(0f, side > 0 ? -90f : 90f, 0f);
-                b.Add(eyeMesh, mat, Matrix4x4.TRS(p + rot * new Vector3(-gap * 0.5f, 0f, 0f), rot, size), false);
-                b.Add(eyeMesh, mat, Matrix4x4.TRS(p + rot * new Vector3(gap * 0.5f, 0f, 0f), rot, size), false);
             }
         }
 

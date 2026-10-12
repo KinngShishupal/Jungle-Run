@@ -45,7 +45,7 @@ namespace JungleEscape
         static readonly (BiomeType world, string label)[] Worlds =
         {
             (BiomeType.Jungle, "Jungle"), (BiomeType.IceAge, "Ice Age"),
-            (BiomeType.WaterWorld, "Water"), (BiomeType.HorrorJungle, "Horror")
+            (BiomeType.WaterWorld, "Water"), (BiomeType.Desert, "Desert")
         };
 
         GUIStyle worldButton, worldButtonOn;

@@ -87,7 +87,7 @@ namespace JungleEscape
             backdrop.SetColor("_Tint", l.MountainTint);
         }
 
-        /// <summary>Airborne particles for each world: pollen, snowfall, rising embers or ghostly wisps.</summary>
+        /// <summary>Airborne particles for each world: pollen, snowfall, sea spray or blowing sand.</summary>
         public static void SetAirborne(BiomeType b)
         {
             if (Pollen == null) return;
@@ -111,12 +111,13 @@ namespace JungleEscape
                     em.rateOverTime = 60f;
                     noise.strength = 0.35f;
                     break;
-                case BiomeType.HorrorJungle:
-                    main.startColor = new ParticleSystem.MinMaxGradient(new Color(0.5f, 1f, 0.6f, 0.45f), new Color(0.4f, 0.7f, 1f, 0.2f));
-                    main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.16f);
-                    main.gravityModifier = 0f;
-                    em.rateOverTime = 26f;
-                    noise.strength = 0.4f;
+                case BiomeType.Desert:
+                    // Fine sand grains and dust carried on the hot wind
+                    main.startColor = new ParticleSystem.MinMaxGradient(new Color(0.95f, 0.82f, 0.6f, 0.5f), new Color(0.85f, 0.7f, 0.48f, 0.25f));
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.02f, 0.07f);
+                    main.gravityModifier = 0.02f;
+                    em.rateOverTime = 90f;
+                    noise.strength = 0.9f;
                     break;
                 default:
                     main.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 0.92f, 0.65f, 0.55f), new Color(1f, 0.98f, 0.85f, 0.25f));

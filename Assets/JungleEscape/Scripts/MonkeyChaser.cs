@@ -12,7 +12,7 @@ namespace JungleEscape
     /// the spine flexes and the body flies between strides. Waiting, they sit, look around, scratch and
     /// wave. Close behind you they shriek; when they catch you they rise up and grab.
     /// Their fur changes with the world (brown jungle monkeys, snow macaques, red-orange coast monkeys,
-    /// black horror monkeys with glowing eyes).
+    /// silver-grey desert baboons).
     /// </summary>
     public class MonkeyChaser : MonoBehaviour
     {
@@ -301,10 +301,10 @@ namespace JungleEscape
                     belly = new Color(0.86f, 0.8f, 0.68f); face = new Color(0.8f, 0.58f, 0.46f);
                     pupil = Mats.Plain(new Color(0.06f, 0.04f, 0.02f), 0.95f);
                     break;
-                case BiomeType.HorrorJungle: // black-furred, ashen faces, eyes glowing red
-                    fur = new Color(0.12f, 0.11f, 0.1f); dark = new Color(0.05f, 0.05f, 0.05f);
-                    belly = new Color(0.24f, 0.21f, 0.19f); face = new Color(0.55f, 0.54f, 0.5f);
-                    pupil = Mats.Emissive("MonkeyGlowEye", Tex.Metal, new Color(1f, 0.15f, 0.1f), 0.9f, new Color(3f, 0.35f, 0.2f));
+                case BiomeType.Desert: // hamadryas baboons: silver-grey mantles, pink-red faces
+                    fur = new Color(0.62f, 0.58f, 0.5f); dark = new Color(0.44f, 0.4f, 0.34f);
+                    belly = new Color(0.74f, 0.7f, 0.62f); face = new Color(0.86f, 0.5f, 0.46f);
+                    pupil = Mats.Plain(new Color(0.08f, 0.05f, 0.03f), 0.95f);
                     break;
                 default: // jungle: brown monkeys with tan faces
                     fur = new Color(0.38f, 0.25f, 0.15f); dark = new Color(0.17f, 0.11f, 0.07f);

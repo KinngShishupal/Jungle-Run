@@ -38,7 +38,7 @@ namespace JungleEscape
         Transform body;
         Transform[] legs;
         float phase, speedNow;
-        QuadRig quad;
+        GaitRig quad;
         bool quadChecked;
 
         public bool Charges => Type == ObstacleType.Boar || Type == ObstacleType.Tiger;
@@ -48,7 +48,7 @@ namespace JungleEscape
             if (Handled) return;
 
             if (!Charges) return;
-            if (!quadChecked) { quad = GetComponent<QuadRig>(); quadChecked = true; }
+            if (!quadChecked) { quad = GetComponent<GaitRig>(); quadChecked = true; }
             var gm = GameManager.I;
             if (gm == null || gm.State != GameState.Playing)
             {
@@ -138,23 +138,20 @@ namespace JungleEscape
                 case ObstacleType.Log:
                     col.center = new Vector3(0f, 0.4f, 0f);
                     col.size = new Vector3(2.0f, 0.8f, 0.7f);
-                    if (ob.Creature == Creature.PoisonPods) Creatures.BuildPoisonPods(t);
-                    else BuildLog(t, variant);
+                    BuildLog(t, variant);
                     break;
 
                 case ObstacleType.Branch:
                     // Solid from 1.1 m up: standing or jumping hits it, rolling passes under.
                     col.center = new Vector3(0f, 2.3f, 0f);
                     col.size = new Vector3(2.2f, 2.4f, 0.5f);
-                    if (ob.Creature == Creature.StranglerVines) Creatures.BuildStranglerVines(t);
-                    else BuildBranch(t, variant);
+                    BuildBranch(t, variant);
                     break;
 
                 case ObstacleType.Boulder:
                     col.center = new Vector3(0f, 1.5f, 0f);
                     col.size = new Vector3(2.2f, 3.0f, 1.6f);
-                    if (ob.Creature == Creature.Flytrap) Creatures.BuildFlytrap(t);
-                    else BuildBoulder(t, variant);
+                    BuildBoulder(t, variant);
                     break;
 
                 case ObstacleType.Boar:
@@ -163,6 +160,13 @@ namespace JungleEscape
                     MakeMoving(go);
                     if (ob.Creature == Creature.WoollyRhino) Creatures.BuildWoollyRhino(t, out ob.legs, out ob.body);
                     else if (ob.Creature == Creature.Crocodile) Creatures.BuildCrocodile(t, out ob.legs, out ob.body);
+                    else if (ob.Creature == Creature.Ostrich)
+                    {
+                        // Far too tall to jump: dodge it.
+                        Creatures.BuildOstrich(t, out ob.legs, out ob.body);
+                        col.center = new Vector3(0f, 1.25f, 0f);
+                        col.size = new Vector3(1.0f, 2.5f, 1.4f);
+                    }
                     else BuildBoar(ob, t);
                     break;
 
@@ -170,7 +174,7 @@ namespace JungleEscape
                     col.center = new Vector3(0f, 0.25f, 0f);
                     col.size = new Vector3(2.4f, 0.5f, 0.8f);
                     if (ob.Creature == Creature.Crab) Creatures.BuildCrab(t);
-                    else if (ob.Creature == Creature.Spider) Creatures.BuildSpider(t);
+                    else if (ob.Creature == Creature.Scorpion) Creatures.BuildScorpion(t);
                     else Animals.BuildSnake(t);
                     break;
 
@@ -179,7 +183,7 @@ namespace JungleEscape
                     col.size = new Vector3(1.0f, 1.2f, 2.2f);
                     MakeMoving(go);
                     if (ob.Creature == Creature.Sabertooth) Creatures.BuildBigCat(t, Creatures.CatKind.Sabertooth, out ob.legs, out ob.body);
-                    else if (ob.Creature == Creature.Werewolf) Creatures.BuildBigCat(t, Creatures.CatKind.Werewolf, out ob.legs, out ob.body);
+                    else if (ob.Creature == Creature.Lion) Creatures.BuildBigCat(t, Creatures.CatKind.Lion, out ob.legs, out ob.body);
                     else if (ob.Creature == Creature.Hippo) Creatures.BuildHippo(t, out ob.legs, out ob.body);
                     else Animals.BuildTiger(t, out ob.legs, out ob.body);
                     break;
@@ -189,7 +193,7 @@ namespace JungleEscape
                     col.size = new Vector3(2.0f, 2.5f, 1.2f);
                     if (ob.Creature == Creature.Mammoth) Creatures.BuildMammoth(t);
                     else if (ob.Creature == Creature.Octopus) Creatures.BuildOctopus(t);
-                    else if (ob.Creature == Creature.Ghoul) Creatures.BuildGhoul(t);
+                    else if (ob.Creature == Creature.Camel) Creatures.BuildCamel(t);
                     else Animals.BuildBear(t);
                     break;
             }

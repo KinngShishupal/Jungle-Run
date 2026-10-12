@@ -48,6 +48,17 @@ namespace JungleEscape
         public static Material IceRock => Lit("IceRock", Tex.CaveStone, new Color(0.72f, 0.88f, 1f), 0.9f, tiling: new Vector2(1f, 1f), bump: 0.8f);
         public static Material IceCrystal => Emissive("IceCrystal", Tex.Metal, new Color(0.7f, 0.9f, 1f), 0.95f, new Color(0.15f, 0.35f, 0.5f));
 
+        // ---------------- Desert (own materials, so the world re-skin leaves them alone) ----------------
+
+        public static Material Cactus => Lit("Cactus", Tex.Cactus, Color.white, 0.38f, tiling: new Vector2(1f, 1f), bump: 1.3f);
+        public static Material CactusPad => Lit("CactusPad", Tex.Leather, new Color(0.42f, 0.56f, 0.3f), 0.32f, tiling: new Vector2(2f, 2f), bump: 0.8f);
+        public static Material Agave => Lit("Agave", Tex.Skin, new Color(0.46f, 0.6f, 0.56f), 0.42f, tiling: new Vector2(1f, 3f), bump: 0.6f);
+        public static Material Sandstone => Lit("Sandstone", Tex.Sandstone, Color.white, 0.12f, tiling: new Vector2(2f, 1f), bump: 1.4f);
+        public static Material Sand => Lit("Sand", Tex.Sand, Color.white, 0.1f, tiling: new Vector2(3f, 3f), bump: 0.9f);
+        public static Material DryWood => Lit("DryWood", Tex.Bark, new Color(0.82f, 0.78f, 0.7f), 0.12f, tiling: new Vector2(1f, 2f), bump: 1.6f);
+        public static Material Straw => Lit("Straw", Tex.Bark, new Color(0.86f, 0.7f, 0.45f), 0.15f, tiling: new Vector2(1f, 6f), bump: 0.6f);
+        public static Material Bone => Lit("Bone", Tex.Skin, new Color(0.9f, 0.86f, 0.76f), 0.35f, tiling: new Vector2(2f, 2f), bump: 0.8f);
+
         // ---------------- Animals ----------------
 
         public static Material SnakeSkin => Lit("SnakeSkin", Tex.SnakeSkin, Color.white, 0.55f, tiling: new Vector2(1f, 6f));

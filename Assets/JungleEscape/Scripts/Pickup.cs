@@ -24,6 +24,11 @@ namespace JungleEscape
         float phase, wave, spin, tilt = 18f, wobble = 8f, spinRate = 140f;
         Color glow;
         Currency kind;
+        // Water glass: the water surface sloshes on a spring
+        Transform waterTop;
+        Vector2 slosh, sloshV;
+        Vector3 prevPos, prevVel;
+        bool sloshInit;
         // Magnet pull: once grabbed, a banana homes in with real velocity (pops up, then curves in and accelerates).
         bool pulled;
         Vector3 vel;
@@ -52,6 +57,24 @@ namespace JungleEscape
             float bob = 0.09f * Mathf.Sin(t * 2.6f - wave);
             if (!pulled) visual.localPosition = new Vector3(0f, bob, 0f);
             visual.localRotation = Quaternion.Euler(0f, spin, 0f) * Quaternion.Euler(wobble * Mathf.Sin(t * 1.7f + phase), 0f, tilt + wobble * 0.9f * Mathf.Sin(t * 2.1f + phase));
+            if (kind == Currency.WaterGlass && waterTop != null)
+            {
+                // Sloshing water: the surface wants to stay level (perpendicular to gravity plus the glass's own
+                // acceleration). It follows that target through a damped spring, so it lags, overshoots and
+                // settles - gently while bobbing, wildly when the magnet yanks the glass toward the runner.
+                Vector3 p = visual.position;
+                Vector3 v = (p - prevPos) / Mathf.Max(dt, 1e-4f);
+                Vector3 a = Vector3.ClampMagnitude((v - prevVel) / Mathf.Max(dt, 1e-4f), 60f);
+                if (!sloshInit) { a = Vector3.zero; sloshInit = true; }
+                prevPos = p; prevVel = v;
+                Vector3 up = (Vector3.up * 9.8f + a).normalized; // normal of the free surface = -(g - a)
+                Vector3 localUp = visual.InverseTransformDirection(up);
+                var level = new Vector2(Mathf.Atan2(localUp.z, localUp.y), -Mathf.Atan2(localUp.x, localUp.y)) * Mathf.Rad2Deg;
+                sloshV += ((level - slosh) * 120f - sloshV * 6f) * dt;
+                slosh += sloshV * dt;
+                slosh = Vector2.ClampMagnitude(slosh, 14f);
+                waterTop.localRotation = Quaternion.Euler(slosh.x, 0f, slosh.y);
+            }
             if (halo != null) halo.localScale = Vector3.one * (0.9f + 0.06f * Mathf.Sin(t * 3.3f + phase));
             if (shadow != null)
             {
@@ -201,7 +224,7 @@ namespace JungleEscape
 
         // ---------------- World currencies ----------------
 
-        public enum Currency { Banana, Acorn, GoldCoin, SoulOrb }
+        public enum Currency { Banana, Acorn, GoldCoin, WaterGlass }
 
         public static Currency CurrencyOf(BiomeType world)
         {
@@ -209,7 +232,7 @@ namespace JungleEscape
             {
                 case BiomeType.IceAge: return Currency.Acorn;
                 case BiomeType.WaterWorld: return Currency.GoldCoin;
-                case BiomeType.HorrorJungle: return Currency.SoulOrb;
+                case BiomeType.Desert: return Currency.WaterGlass;
                 default: return Currency.Banana;
             }
         }
@@ -221,7 +244,7 @@ namespace JungleEscape
             {
                 case Currency.Acorn: return "acorns";
                 case Currency.GoldCoin: return "gold coins";
-                case Currency.SoulOrb: return "soul orbs";
+                case Currency.WaterGlass: return "glasses of water";
                 default: return "bananas";
             }
         }
@@ -232,7 +255,7 @@ namespace JungleEscape
             {
                 case Currency.Acorn: return new Color(1f, 0.78f, 0.45f);
                 case Currency.GoldCoin: return new Color(1f, 0.8f, 0.3f);
-                case Currency.SoulOrb: return new Color(0.45f, 1f, 0.65f);
+                case Currency.WaterGlass: return new Color(0.5f, 0.82f, 1f);
                 default: return new Color(1f, 0.85f, 0.35f);
             }
         }
@@ -281,24 +304,47 @@ namespace JungleEscape
                     break;
                 }
 
-                case Currency.SoulOrb:
+                case Currency.WaterGlass:
                 {
-                    // A glowing spirit orb with a bright core and wisps circling it (they orbit as it spins).
-                    var shell = Mats.Emissive("SoulShell", Tex.Metal, new Color(0.3f, 0.8f, 0.55f), 0.95f, new Color(0.25f, 1.1f, 0.6f));
-                    var core = Mats.Emissive("SoulCore", Tex.Metal, new Color(0.9f, 1f, 0.95f), 0.95f, new Color(1.6f, 2.6f, 1.8f));
-                    Prim.Shape(ballMesh, "Orb", v, Vector3.zero, Vector3.one * 0.34f, shell);
-                    Prim.Shape(ballMesh, "Core", v, new Vector3(0f, 0.02f, -0.12f), Vector3.one * 0.14f, core, null, false);
-                    for (int i = 0; i < 3; i++)
+                    // A tumbler of cold water, half full: clear walls with a heavy base and a rounded lip, sharp and
+                    // soft reflections down the front, beads of condensation below the waterline, and clear water
+                    // with a bright meniscus whose surface sloshes. Ice cubes float mostly submerged, as ice does.
+                    // Transparent parts draw back to front: water, surface, meniscus, base, walls, then highlights.
+                    var water = GlassMat("GlassWater", new Color(0.42f, 0.72f, 0.9f, 0.38f), false, 3000);
+                    var surface = GlassMat("GlassWaterTop", new Color(0.72f, 0.9f, 1f, 0.5f), false, 3001);
+                    var meniscus = GlassMat("GlassMeniscus", new Color(0.9f, 0.98f, 1f, 0.75f), true, 3002);
+                    var glassBase = GlassMat("GlassBase", new Color(0.7f, 0.88f, 0.92f, 0.32f), false, 3003);
+                    var glass = GlassMat("Glass", new Color(0.88f, 0.96f, 1f, 0.16f), false, 3004);
+                    var sheen = GlassMat("GlassSheen", new Color(0.9f, 0.97f, 1f, 0.18f), true, 3005);
+                    var shine = GlassMat("GlassHighlight", new Color(1f, 1f, 1f, 0.7f), true, 3006);
+                    var rim = GlassMat("GlassRim", new Color(1f, 1f, 1f, 0.55f), true, 3006);
+                    var beads = GlassMat("GlassCondensation", new Color(1f, 1f, 1f, 0.55f), true, 3006);
+                    var ice = Mats.Emissive("IceCube", Tex.Metal, new Color(0.86f, 0.95f, 1f), 0.95f, new Color(0.25f, 0.35f, 0.45f));
+
+                    var o = new Vector3(0f, -0.21f, 0f);
+                    Prim.Shape(waterMesh, "Water", v, o, Vector3.one, water, null, false);
+                    var top = p.waterTop = Prim.Group("WaterTop", v, o + new Vector3(0f, WaterLevel, 0f));
+                    Prim.Shape(shadowMesh, "Surface", top, Vector3.zero, new Vector3(0.264f, 1f, 0.264f), surface, null, false);
+                    Prim.Shape(meniscusMesh, "Meniscus", top, new Vector3(0f, 0.002f, 0f), Vector3.one, meniscus, null, false);
+                    Prim.Shape(cubeMesh, "Ice", top, new Vector3(0.035f, -0.02f, 0.025f), Vector3.one, ice, new Vector3(8f, 25f, 6f), false);
+                    Prim.Shape(cubeMesh, "Ice", top, new Vector3(-0.045f, -0.022f, -0.025f), Vector3.one * 0.8f, ice, new Vector3(-6f, 70f, 10f), false);
+                    Prim.Shape(glassBaseMesh, "Base", v, o, Vector3.one, glassBase, null, false);
+                    Prim.Shape(glassMesh, "Glass", v, o, Vector3.one, glass, null, false);
+                    Prim.Shape(rimMesh, "Rim", v, o + new Vector3(0f, 0.4235f, 0f), Vector3.one, rim, null, false);
+                    Prim.Shape(sheenMesh, "Sheen", v, o, Vector3.one, sheen, null, false);
+                    Prim.Shape(highlightMesh, "Highlight", v, o, Vector3.one, shine, null, false);
+                    Prim.Shape(highlight2Mesh, "Highlight2", v, o, Vector3.one, shine, null, false);
+                    // Condensation beads on the cold part of the glass, below the waterline, on the side facing the viewer
+                    for (int i = 0; i < 18; i++)
                     {
-                        float a = i * 120f * Mathf.Deg2Rad;
-                        for (int k = 0; k < 3; k++)
-                        {
-                            float aa = a - k * 0.35f;
-                            Prim.Shape(ballMesh, "Wisp", v, new Vector3(Mathf.Cos(aa) * 0.3f, 0.06f * Mathf.Sin(aa * 2f) + k * 0.04f, Mathf.Sin(aa) * 0.3f),
-                                       Vector3.one * (0.075f - k * 0.018f), shell, null, false);
-                        }
+                        float a = Random.Range(195f, 345f) * Mathf.Deg2Rad;
+                        float y = Random.Range(0.07f, WaterLevel - 0.01f);
+                        float r = OuterRadius(y) + 0.003f;
+                        float s = Random.Range(0.6f, 1.2f);
+                        Prim.Shape(ballMesh, "Bead", v, o + new Vector3(Mathf.Cos(a) * r, y, Mathf.Sin(a) * r), new Vector3(0.008f, 0.011f, 0.006f) * s,
+                                   beads, new Vector3(0f, -a * Mathf.Rad2Deg + 90f, 0f), false);
                     }
-                    p.tilt = 0f; p.wobble = 10f; p.spinRate = 260f;
+                    p.tilt = 0f; p.wobble = 4f; p.spinRate = 0f; // no spin: the reflections stay facing the light
                     break;
                 }
             }
@@ -306,7 +352,9 @@ namespace JungleEscape
 
         // ---------------- Shared meshes & materials ----------------
 
-        static Mesh acornNut, acornCap, acornStem, coinMesh, barMesh;
+        static Mesh acornNut, acornCap, acornStem, coinMesh, barMesh, cubeMesh;
+        static Mesh glassMesh, glassBaseMesh, waterMesh, rimMesh, meniscusMesh, highlightMesh, highlight2Mesh, sheenMesh;
+        const float WaterLevel = 0.235f; // half the inside height of the glass
         static readonly Dictionary<Color, Material> haloByColor = new Dictionary<Color, Material>();
         static Mesh bananaMesh, stalkMesh, shadowMesh, ballMesh, ringMesh, smallLeaf, gliderLeaf, idolMesh, haloMesh;
         static Vector3 bananaTip, stalkEnd;
@@ -367,6 +415,30 @@ namespace JungleEscape
                 new Vector2(0.1f, 0.145f), new Vector2(0.001f, 0.155f)
             }, 18, 3f, "AcornCap");
             acornStem = Meshes.Limb(0.07f, 0.018f, 0.014f, 6, 2);
+            // Tumbler: a heavy base, walls that flare slightly to a rounded lip, then back down the inside.
+            glassMesh = White(Meshes.Lathe(new[]
+            {
+                new Vector2(0.001f, 0f), new Vector2(0.116f, 0f), new Vector2(0.125f, 0.004f), new Vector2(0.13f, 0.016f), new Vector2(0.132f, 0.04f),
+                new Vector2(0.149f, 0.4f), new Vector2(0.151f, 0.414f), new Vector2(0.1495f, 0.424f), new Vector2(0.1465f, 0.4265f), new Vector2(0.1435f, 0.423f),
+                new Vector2(0.142f, 0.41f), new Vector2(0.126f, 0.078f), new Vector2(0.12f, 0.064f), new Vector2(0.105f, 0.059f), new Vector2(0.001f, 0.057f)
+            }, 40, 1f, "Glass"));
+            // The thick glass base reads as a denser, slightly tinted block
+            glassBaseMesh = White(Meshes.Lathe(new[]
+            {
+                new Vector2(0.001f, 0.003f), new Vector2(0.121f, 0.004f), new Vector2(0.127f, 0.02f), new Vector2(0.121f, 0.054f), new Vector2(0.001f, 0.056f)
+            }, 40, 1f, "GlassBase"));
+            // Water up to half the inside height, hugging the inner wall
+            waterMesh = White(Meshes.Lathe(new[]
+            {
+                new Vector2(0.001f, 0.059f), new Vector2(0.11f, 0.06f), new Vector2(0.122f, 0.066f), new Vector2(0.1255f, 0.078f), new Vector2(0.1332f, WaterLevel)
+            }, 40, 1f, "GlassWater"));
+            rimMesh = White(Meshes.Sweep(Circle(0.1465f, 48), (t, a) => 0.0045f, 6, 1f, 2f));
+            meniscusMesh = White(Meshes.Sweep(Circle(0.1308f, 48), (t, a) => 0.0035f, 5, 1f, 2f));
+            // Reflections: a sharp highlight and a broad soft sheen down the front-left, a fainter one on the right
+            highlightMesh = White(WallStreak(226f, 0.075f, 0.39f, 0.0045f));
+            sheenMesh = White(WallStreak(240f, 0.06f, 0.4f, 0.016f));
+            highlight2Mesh = White(WallStreak(318f, 0.12f, 0.31f, 0.003f));
+            cubeMesh = Meshes.RoundedBox(new Vector3(0.068f, 0.06f, 0.068f), 0.016f, 3); // slightly melted, rounded edges
             coinMesh = Meshes.Lathe(new[]
             {
                 new Vector2(0.001f, 0f), new Vector2(0.2f, 0.004f), new Vector2(0.235f, 0f), new Vector2(0.27f, 0.006f), new Vector2(0.28f, 0.03f),
@@ -396,6 +468,53 @@ namespace JungleEscape
             }, 20, 1f, "Idol");
 
             haloMesh = Meshes.Billboard(1f, 1f);
+        }
+
+        static readonly Dictionary<string, Material> glassMats = new Dictionary<string, Material>();
+
+        /// <summary>See-through glass (alpha-blended, or additive for highlights) from the particle templates.</summary>
+        static Material GlassMat(string key, Color c, bool additive, int queue)
+        {
+            if (glassMats.TryGetValue(key, out var m) && m != null) return m;
+            m = new Material(Mats.Template(additive ? "JE_ParticleAdd" : "JE_ParticleAlpha")) { name = key };
+            m.SetTexture("_BaseMap", Texture2D.whiteTexture);
+            m.SetColor("_BaseColor", c);
+            m.renderQueue = queue;
+            return glassMats[key] = m;
+        }
+
+        /// <summary>Radius of the glass's outer wall at height y (matches the glass profile).</summary>
+        static float OuterRadius(float y) => Mathf.Lerp(0.132f, 0.149f, Mathf.InverseLerp(0.04f, 0.4f, y));
+
+        static List<Vector3> Circle(float r, int n)
+        {
+            var c = new List<Vector3>(n + 1);
+            for (int i = 0; i <= n; i++) { float a = i / (float)n * Mathf.PI * 2f; c.Add(new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r)); }
+            return c;
+        }
+
+        /// <summary>A reflection streak lying on the curved outer wall at the given angle, fading to points at both ends.</summary>
+        static Mesh WallStreak(float angleDeg, float y0, float y1, float width)
+        {
+            float a = angleDeg * Mathf.Deg2Rad;
+            var dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+            var path = new List<Vector3>();
+            for (int i = 0; i <= 12; i++)
+            {
+                float y = Mathf.Lerp(y0, y1, i / 12f);
+                path.Add(dir * (OuterRadius(y) + 0.0015f) + Vector3.up * y);
+            }
+            // Flattened against the glass: a thin tube squashed by sampling only a narrow radius
+            return Meshes.Sweep(path, (t, ang) => width * Mathf.Pow(Mathf.Sin(Mathf.PI * t), 0.6f) * (0.35f + 0.65f * Mathf.Abs(Mathf.Cos(ang))), 6, 1f, 2f);
+        }
+
+        /// <summary>Gives a mesh white vertex colours, which the particle shaders multiply in.</summary>
+        static Mesh White(Mesh m)
+        {
+            var cols = new Color[m.vertexCount];
+            for (int i = 0; i < cols.Length; i++) cols[i] = Color.white;
+            m.colors = cols;
+            return m;
         }
 
         static Material HaloMat(Color glow, float alpha)
