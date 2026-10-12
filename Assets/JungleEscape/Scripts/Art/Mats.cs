@@ -39,6 +39,15 @@ namespace JungleEscape
         public static Material Flame => Emissive("Flame", Tex.Metal, new Color(1f, 0.6f, 0.2f), 0.1f, new Color(4f, 1.6f, 0.3f));
         public static Material CaveRock => Lit("CaveRock", Tex.CaveStone, Color.white, 0.38f, bump: 1.4f);
 
+        // ---------------- Ice Age flora (own materials, so the world re-skin leaves them alone) ----------------
+
+        public static Material PineNeedles => Lit("PineNeedles", Tex.Leaves, new Color(0.34f, 0.5f, 0.46f), 0.22f, tiling: new Vector2(5f, 3f), bump: 1.4f);
+        public static Material Snow => Lit("Snow", Tex.Skin, new Color(0.95f, 0.97f, 1f), 0.5f, tiling: new Vector2(3f, 3f), bump: 0.6f);
+        public static Material BirchBark => Lit("BirchBark", Tex.PalmBark, new Color(0.95f, 0.93f, 0.9f), 0.2f, tiling: new Vector2(1f, 2f));
+        public static Material TundraGrass => Cutout("TundraGrass", Tex.Grass, new Color(1f, 0.85f, 0.62f), 0.2f);
+        public static Material IceRock => Lit("IceRock", Tex.CaveStone, new Color(0.72f, 0.88f, 1f), 0.9f, tiling: new Vector2(1f, 1f), bump: 0.8f);
+        public static Material IceCrystal => Emissive("IceCrystal", Tex.Metal, new Color(0.7f, 0.9f, 1f), 0.95f, new Color(0.15f, 0.35f, 0.5f));
+
         // ---------------- Animals ----------------
 
         public static Material SnakeSkin => Lit("SnakeSkin", Tex.SnakeSkin, Color.white, 0.55f, tiling: new Vector2(1f, 6f));

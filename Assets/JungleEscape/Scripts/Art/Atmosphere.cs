@@ -451,7 +451,7 @@ namespace JungleEscape
             }
         }
 
-        public static void Dust(Vector3 pos, int count = 2, float size = 0.5f)
+        public static void Dust(Vector3 pos, int count = 2, float size = 0.5f, Color? color = null)
         {
             if (dust == null)
             {
@@ -475,7 +475,7 @@ namespace JungleEscape
                 ep.startSize = size * Random.Range(0.7f, 1.3f);
                 ep.startLifetime = Random.Range(0.5f, 0.9f);
                 ep.rotation = Random.Range(0f, 360f);
-                ep.startColor = new Color(0.62f, 0.52f, 0.40f, 0.45f);
+                ep.startColor = color ?? new Color(0.62f, 0.52f, 0.40f, 0.45f);
                 dust.Emit(ep, 1);
             }
         }

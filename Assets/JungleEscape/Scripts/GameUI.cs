@@ -40,6 +40,37 @@ namespace JungleEscape
             if (gm.State == GameState.Playing || gm.State == GameState.Paused) DrawAnnouncement(w, h);
         }
 
+        // ---------------- Developer world picker ----------------
+
+        static readonly (BiomeType world, string label)[] Worlds =
+        {
+            (BiomeType.Jungle, "Jungle"), (BiomeType.IceAge, "Ice Age"),
+            (BiomeType.WaterWorld, "Water"), (BiomeType.HorrorJungle, "Horror")
+        };
+
+        GUIStyle worldButton, worldButtonOn;
+
+        void DrawWorldPicker(GameManager gm, float w, float y)
+        {
+            if (worldButton == null)
+            {
+                worldButton = new GUIStyle(smallButton) { fontSize = 34 };
+                worldButtonOn = new GUIStyle(worldButton);
+                worldButtonOn.normal.background = button.normal.background;
+                worldButtonOn.normal.textColor = Gold;
+            }
+            Shadow(new Rect(0, y, w, 50), "TEST WORLD  (or keys 1-4 while playing)", small, new Color(1f, 1f, 1f, 0.75f));
+            const float bw = 230f, gap = 14f;
+            float x = w / 2f - (Worlds.Length * bw + (Worlds.Length - 1) * gap) / 2f;
+            foreach (var (world, label) in Worlds)
+            {
+                var style = Biomes.StartWorld == world ? worldButtonOn : worldButton;
+                if (GUI.Button(new Rect(x, y + 55f, bw, 90f), label, style) && Biomes.StartWorld != world)
+                    gm.PreviewWorld(world);
+                x += bw + gap;
+            }
+        }
+
         // ---------------- New-world announcement ----------------
 
         static string announceTitle;
@@ -94,6 +125,9 @@ namespace JungleEscape
             Shadow(new Rect(stats.x, stats.y + 98, stats.width, 70), $"Bananas   {gm.TotalBananas:N0}", mid, Gold);
 
             if (GUI.Button(new Rect(w / 2 - 300, h * 0.60f, 600, 170), "RUN", button)) gm.StartRun();
+
+            // Developer world picker (editor & development builds only): choose the world a run starts in.
+            if (Debug.isDebugBuild) DrawWorldPicker(gm, w, h * 0.60f + 195f);
 
             Shadow(new Rect(40, h - 330, w - 80, 300),
                 "Swipe left / right to change lane\nSwipe up to jump logs  ·  Swipe down to roll under branches\n" +

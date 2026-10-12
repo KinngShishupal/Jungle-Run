@@ -121,6 +121,7 @@ namespace JungleEscape
         const int Variants = 4;
 
         static List<Model> trees, palms, ferns, broadPlants, bushes, rocks, tufts, wallTrees;
+        static List<Model> pines, birches, junipers, tundraTufts, drifts, iceBoulders, iceCrystals;
 
         public static Model Tree(int i) => Pick(ref trees, BuildTree, i);
         public static Model Palm(int i) => Pick(ref palms, BuildPalm, i);
@@ -130,6 +131,15 @@ namespace JungleEscape
         public static Model Rock(int i) => Pick(ref rocks, BuildRock, i);
         public static Model Tuft(int i) => Pick(ref tufts, BuildTuft, i);
         public static Model WallTree(int i) => Pick(ref wallTrees, BuildWallTree, i);
+
+        // Ice Age flora
+        public static Model Pine(int i) => Pick(ref pines, BuildPine, i);
+        public static Model Birch(int i) => Pick(ref birches, BuildBirch, i);
+        public static Model Juniper(int i) => Pick(ref junipers, BuildJuniper, i);
+        public static Model TundraTuft(int i) => Pick(ref tundraTufts, BuildTundraTuft, i);
+        public static Model Snowdrift(int i) => Pick(ref drifts, BuildSnowdrift, i);
+        public static Model IceBoulder(int i) => Pick(ref iceBoulders, BuildIceBoulder, i);
+        public static Model IceCrystals(int i) => Pick(ref iceCrystals, BuildIceCrystals, i);
 
         static Model Pick(ref List<Model> list, System.Func<int, Model> build, int i)
         {
@@ -318,6 +328,137 @@ namespace JungleEscape
         {
             var m = new Model();
             m.Add(Meshes.Blob(seed * 7 + 300, 2, 0.32f, 1.5f, 0.28f, true), Mats.Rock, Matrix4x4.identity);
+            return m;
+        }
+
+        // ---------------- Ice Age ----------------
+
+        static Mesh tierCone, prism;
+
+        /// <summary>Cone of pine branches (closed underneath, so tiers look solid from below).</summary>
+        static Mesh TierCone => tierCone != null ? tierCone : (tierCone = Meshes.Lathe(new[]
+        {
+            new Vector2(0.001f, 0.12f), new Vector2(1f, 0f), new Vector2(0.72f, 0.28f), new Vector2(0.36f, 0.66f), new Vector2(0.001f, 1f)
+        }, 14, 3f, "PineTier"));
+
+        static Mesh Prism => prism != null ? prism : (prism = Meshes.Lathe(new[]
+        {
+            new Vector2(0.001f, 0f), new Vector2(0.1f, 0.02f), new Vector2(0.1f, 0.75f), new Vector2(0.001f, 1f)
+        }, 6, 1f, "IcePrism"));
+
+        /// <summary>Snow-laden spruce: stacked tiers of dark needles, each topped with a cap of snow.</summary>
+        static Model BuildPine(int seed)
+        {
+            var m = new Model();
+            float h = Random.Range(7f, 12f);
+            var path = new List<Vector3>();
+            for (int i = 0; i <= 6; i++) path.Add(new Vector3(Mathf.Sin(i * 0.9f + seed) * 0.05f, i / 6f * h, 0f));
+            m.Add(Meshes.Sweep(path, (t, a) => Mathf.Lerp(0.3f, 0.06f, t), 8, 2f, 0.5f), Mats.Bark, Matrix4x4.identity);
+
+            int tiers = Random.Range(6, 10);
+            for (int k = 0; k < tiers; k++)
+            {
+                float t = k / (tiers - 1f);
+                float y = Mathf.Lerp(h * 0.15f, h * 0.9f, t);
+                float r = Mathf.Lerp(2.4f, 0.45f, t) * Random.Range(0.9f, 1.1f);
+                float th = Mathf.Lerp(1.7f, 0.9f, t);
+                var rot = Quaternion.Euler(Random.Range(-3f, 3f), Random.Range(0f, 360f), Random.Range(-3f, 3f));
+                m.Add(TierCone, Mats.PineNeedles, new Vector3(0f, y, 0f), rot, new Vector3(r, th, r));
+                // Snow sits just above the needles over most of the tier, leaving a dark fringe at the rim.
+                m.Add(TierCone, Mats.Snow, new Vector3(0f, y + th * 0.2f, 0f), rot, new Vector3(r * 0.85f, th * 0.85f, r * 0.85f), false);
+            }
+            m.Add(TierCone, Mats.Snow, new Vector3(0f, h * 0.97f, 0f), Quaternion.identity, new Vector3(0.18f, 0.7f, 0.18f), false);
+            return m;
+        }
+
+        /// <summary>Bare winter birch: slender white trunk and frosted branches.</summary>
+        static Model BuildBirch(int seed)
+        {
+            var m = new Model();
+            float h = Random.Range(5.5f, 8.5f);
+            var lean = new Vector3(Random.Range(-0.4f, 0.4f), 0f, Random.Range(-0.4f, 0.4f));
+            var path = new List<Vector3>();
+            for (int i = 0; i <= 7; i++)
+            {
+                float t = i / 7f;
+                path.Add(new Vector3(0f, t * h, 0f) + lean * t * t);
+            }
+            m.Add(Meshes.Sweep(path, (t, a) => Mathf.Lerp(0.17f, 0.05f, t), 9, 1f, 1.5f), Mats.BirchBark, Matrix4x4.identity);
+
+            int branches = Random.Range(5, 9);
+            for (int b = 0; b < branches; b++)
+            {
+                float t = Random.Range(0.4f, 0.92f);
+                var start = Vector3.Lerp(path[0], path[path.Count - 1], t);
+                var dir = Quaternion.Euler(0f, b * (360f / branches) + Random.Range(-20f, 20f), 0f) * new Vector3(1f, Random.Range(0.6f, 1.3f), 0f).normalized;
+                float len = Random.Range(1.1f, 2.4f) * (1.2f - t * 0.5f);
+                var bp = new List<Vector3> { start, start + dir * len * 0.5f + Vector3.up * 0.1f, start + dir * len + Vector3.up * 0.25f };
+                m.Add(Meshes.Sweep(bp, (u, a) => Mathf.Lerp(0.05f, 0.012f, u), 5, 1f, 2f), Mats.BirchBark, Matrix4x4.identity);
+                for (int k = 0; k < 2; k++) // twigs
+                {
+                    var tStart = Vector3.Lerp(bp[1], bp[2], Random.Range(0.2f, 0.8f));
+                    var tDir = (dir + Random.insideUnitSphere * 0.8f + Vector3.up * 0.4f).normalized;
+                    var tp = new List<Vector3> { tStart, tStart + tDir * 0.5f };
+                    m.Add(Meshes.Sweep(tp, (u, a) => Mathf.Lerp(0.015f, 0.004f, u), 4, 1f, 2f), Mats.BirchBark, Matrix4x4.identity, false);
+                }
+                if (b % 3 == 0) // a little snow caught where the branch meets the trunk
+                    m.Add(Meshes.Blob(seed * 7 + b, 1, 0.3f, 2.5f, 0f, false), Mats.Snow, start + dir * 0.25f + Vector3.up * 0.06f,
+                          Quaternion.identity, new Vector3(0.3f, 0.1f, 0.3f), false);
+            }
+            return m;
+        }
+
+        static Model BuildJuniper(int seed)
+        {
+            var m = new Model();
+            int lumps = Random.Range(2, 4);
+            for (int i = 0; i < lumps; i++)
+            {
+                float s = Random.Range(0.9f, 1.5f);
+                var p = new Vector3(Random.Range(-0.5f, 0.5f), s * 0.25f, Random.Range(-0.5f, 0.5f));
+                m.Add(Meshes.Blob(seed * 11 + i + 40, 2, 0.4f, 2.4f, 0.2f, false), Mats.PineNeedles, p, Quaternion.identity, new Vector3(s, s * 0.6f, s));
+                m.Add(Meshes.Blob(seed * 11 + i + 60, 1, 0.3f, 2f, 0.2f, false), Mats.Snow, p + Vector3.up * s * 0.2f,
+                      Quaternion.identity, new Vector3(s * 0.85f, s * 0.28f, s * 0.85f), false);
+            }
+            return m;
+        }
+
+        static Model BuildTundraTuft(int seed)
+        {
+            var m = new Model();
+            float h = Random.Range(0.35f, 0.6f);
+            m.Add(Meshes.Tuft(h * 1.3f, h, 3), Mats.TundraGrass, Matrix4x4.identity, false);
+            return m;
+        }
+
+        static Model BuildSnowdrift(int seed)
+        {
+            var m = new Model();
+            m.Add(Meshes.Blob(seed * 5 + 80, 2, 0.22f, 1.6f, 0.15f, false), Mats.Snow, new Vector3(0f, 0.05f, 0f), Quaternion.identity,
+                  new Vector3(Random.Range(1.8f, 3f), Random.Range(0.45f, 0.8f), Random.Range(1.2f, 1.8f)), false);
+            return m;
+        }
+
+        static Model BuildIceBoulder(int seed)
+        {
+            var m = new Model();
+            m.Add(Meshes.Blob(seed * 7 + 320, 2, 0.3f, 1.3f, 0.28f, true), Mats.IceRock, Matrix4x4.identity);
+            m.Add(Meshes.Blob(seed * 7 + 340, 1, 0.3f, 2f, 0.2f, false), Mats.Snow, new Vector3(0f, 0.3f, 0f), Quaternion.identity,
+                  new Vector3(0.75f, 0.22f, 0.75f), false);
+            return m;
+        }
+
+        static Model BuildIceCrystals(int seed)
+        {
+            var m = new Model();
+            int n = Random.Range(5, 9);
+            for (int i = 0; i < n; i++)
+            {
+                var rot = Quaternion.Euler(Random.Range(-35f, 35f), Random.Range(0f, 360f), Random.Range(-35f, 35f));
+                float s = Random.Range(0.6f, 1.8f);
+                m.Add(Prism, Mats.IceCrystal, new Vector3(Random.Range(-0.3f, 0.3f), -0.05f, Random.Range(-0.3f, 0.3f)), rot,
+                      new Vector3(s, s * Random.Range(0.8f, 1.4f), s), false);
+            }
             return m;
         }
 

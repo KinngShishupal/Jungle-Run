@@ -72,6 +72,21 @@ namespace JungleEscape
                 else if (State == GameState.Paused) Resume();
             }
 
+            // Developer shortcut (editor & development builds): keys 1-4 restart in a given world.
+            if (Debug.isDebugBuild)
+            {
+                var kb = UnityEngine.InputSystem.Keyboard.current;
+                if (kb != null)
+                {
+                    BiomeType? pick = kb.digit1Key.wasPressedThisFrame ? BiomeType.Jungle
+                                    : kb.digit2Key.wasPressedThisFrame ? BiomeType.IceAge
+                                    : kb.digit3Key.wasPressedThisFrame ? BiomeType.WaterWorld
+                                    : kb.digit4Key.wasPressedThisFrame ? BiomeType.HorrorJungle
+                                    : (BiomeType?)null;
+                    if (pick.HasValue) PlayWorld(pick.Value);
+                }
+            }
+
             if (State != GameState.Playing) return;
 
             float dt = Time.deltaTime;
@@ -103,6 +118,20 @@ namespace JungleEscape
             Track.ResetTrack();
             Monkeys.BeginChase();
             State = GameState.Playing;
+        }
+
+        /// <summary>Starts a fresh run directly in a world (for testing a world on its own).</summary>
+        public void PlayWorld(BiomeType world)
+        {
+            Biomes.StartWorld = world;
+            StartRun();
+        }
+
+        /// <summary>Shows a world behind the menu without starting a run.</summary>
+        public void PreviewWorld(BiomeType world)
+        {
+            Biomes.StartWorld = world;
+            GoToMenu();
         }
 
         public void GoToMenu()

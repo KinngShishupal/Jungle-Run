@@ -151,11 +151,20 @@ namespace JungleEscape
             Atmosphere.SetAirborne(b);
         }
 
-        public static void ResetToJungle()
+        /// <summary>
+        /// The world a new run starts in. Normally the jungle; developers can pick another one
+        /// (menu buttons or keys 1-4 in the editor / development builds) to test a world directly.
+        /// </summary>
+        public static BiomeType StartWorld = BiomeType.Jungle;
+
+        /// <summary>Instantly switches to a world (no blend), generating its textures right away.</summary>
+        public static void ResetTo(BiomeType b)
         {
-            Current = BiomeType.Jungle;
-            Driver().Snap(Look(BiomeType.Jungle));
-            Atmosphere.SetAirborne(BiomeType.Jungle);
+            var warm = Prewarm(b);
+            while (warm.MoveNext()) { }
+            Current = b;
+            Driver().Snap(Look(b));
+            Atmosphere.SetAirborne(b);
         }
 
         static AtmosphereDriver Driver()

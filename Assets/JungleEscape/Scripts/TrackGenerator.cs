@@ -95,12 +95,13 @@ namespace JungleEscape
             chunkStarts.Clear();
             rivers.Clear();
             TrackPath.Reset(Random.Range(1, int.MaxValue));
-            Biomes.ResetToJungle();
-            main = new Cursor { Path = TrackPath.Current, Biome = BiomeType.Jungle, Spawn = -20f, NextRow = SafeStart };
+            var startWorld = Biomes.StartWorld;
+            Biomes.ResetTo(startWorld);
+            main = new Cursor { Path = TrackPath.Current, Biome = startWorld, Spawn = -20f, NextRow = SafeStart };
             forkL = forkR = null;
             forkPending = false;
             nextForkS = 300f;
-            nextForkWorld = Biomes.PickNext(BiomeType.Jungle);
+            nextForkWorld = Biomes.PickNext(startWorld);
             prewarmStarted = false;
             chunkIndex = 0;
             lastFeature = Feature.None;
@@ -445,6 +446,11 @@ namespace JungleEscape
             for (int s = -1; s <= 1; s += 2)
             {
                 if (s == skipSide) continue;
+                if (biome == BiomeType.IceAge && feature != Feature.Cave)
+                {
+                    IceScenery(b, s, s0, feature == Feature.RockyPass);
+                    continue;
+                }
                 if (biome == BiomeType.WaterWorld && feature != Feature.Cave)
                 {
                     WaterScenery(b, s, s0);
@@ -474,7 +480,8 @@ namespace JungleEscape
             if (feature == Feature.Cave) BuildCave(b, c, s0, owned);
             else
             {
-                if (skipSide == 0 && Random.value < 0.55f) Liana(b, Random.Range(5f, 45f));
+                bool vines = biome == BiomeType.Jungle || biome == BiomeType.HorrorJungle;
+                if (vines && skipSide == 0 && Random.value < 0.55f) Liana(b, Random.Range(5f, 45f));
                 int shafts = biome == BiomeType.HorrorJungle ? 0 : Random.Range(1, 4);
                 for (int i = 0; i < shafts; i++) SunShaft(b, Random.Range(0f, ChunkLength));
             }
@@ -588,6 +595,57 @@ namespace JungleEscape
 
         /// <summary>In the water world, only places on dry sand get plants.</summary>
         static bool AboveWater(Vector3 p) => groundDrop <= 0f || p.y > SeaLevel + 0.15f;
+
+        // ---------------- Ice Age ----------------
+
+        /// <summary>
+        /// Frozen taiga: tundra grass, snowdrifts, junipers and ice by the trail; spruce and bare
+        /// birch further out; a dense wall of big snowy spruce behind. Rocky passes become ice boulders.
+        /// </summary>
+        void IceScenery(ChunkBuilder b, int s, float s0, bool icePass)
+        {
+            // Trail edge
+            for (float z = Random.Range(0f, 1.2f); z < ChunkLength; z += Random.Range(1.1f, 2.2f))
+            {
+                if (Blocked(z)) continue;
+                int v = Random.Range(0, 4);
+                float yaw = Random.Range(0f, 360f);
+                float r = Random.value;
+                if (r < 0.4f) b.Add(Flora.TundraTuft(v), OnGround(s * Random.Range(4.5f, 6.2f), z, s0, 0.02f), yaw, Random.Range(0.9f, 1.5f));
+                else if (r < 0.62f) b.Add(Flora.Snowdrift(v), OnGround(s * Random.Range(5.6f, 7.5f), z, s0, 0.1f), yaw, Random.Range(0.8f, 1.3f));
+                else if (r < 0.82f) b.Add(Flora.Juniper(v), OnGround(s * Random.Range(5.8f, 7.6f), z, s0, 0.05f), yaw, Random.Range(0.8f, 1.2f));
+                else if (r < 0.93f) b.Add(Flora.IceBoulder(v), OnGround(s * Random.Range(5.6f, 7.2f), z, s0, 0.15f), yaw, Random.Range(0.5f, 1.1f));
+                else b.Add(Flora.IceCrystals(v), OnGround(s * Random.Range(5.4f, 6.8f), z, s0, 0f), yaw, Random.Range(0.8f, 1.3f));
+            }
+
+            // Middle distance: spruce and bare birch (or huge ice boulders in a pass)
+            for (float z = Random.Range(0f, 3f); z < ChunkLength; z += Random.Range(4f, 7f))
+            {
+                if (Blocked(z)) continue;
+                float x = s * Random.Range(8f, 12.5f);
+                int v = Random.Range(0, 4);
+                if (icePass)
+                {
+                    float scale = Random.Range(2.5f, 5.5f);
+                    b.Add(Flora.IceBoulder(v), OnGround(x, z, s0, scale * 0.25f), Random.Range(0f, 360f), scale);
+                }
+                else if (Random.value < 0.62f) b.Add(Flora.Pine(v), OnGround(x, z, s0, 0.1f), Random.Range(0f, 360f), Random.Range(0.8f, 1.15f));
+                else b.Add(Flora.Birch(v), OnGround(x, z, s0, 0.05f), Random.Range(0f, 360f), Random.Range(0.85f, 1.15f));
+                if (Random.value < 0.6f)
+                    b.Add(Flora.Snowdrift(v), OnGround(x + Random.Range(-1.5f, 1.5f), z + Random.Range(-1.5f, 1.5f), s0, 0.1f),
+                          Random.Range(0f, 360f), Random.Range(1f, 1.6f));
+            }
+
+            // Dense spruce wall
+            for (float z = Random.Range(0f, 2f); z < ChunkLength; z += Random.Range(3.2f, 5.2f))
+                if (!Blocked(z))
+                    b.Add(Flora.Pine(Random.Range(0, 4)), OnGround(s * Random.Range(14f, 20f), z, s0, 0.15f),
+                          Random.Range(0f, 360f), Random.Range(1.1f, 1.5f));
+            for (float z = Random.Range(0f, 3f); z < ChunkLength; z += Random.Range(4.5f, 7f))
+                if (!Blocked(z))
+                    b.Add(Flora.Pine(Random.Range(0, 4)), OnGround(s * Random.Range(22f, 34f), z, s0, 0.15f),
+                          Random.Range(0f, 360f), Random.Range(1.4f, 1.9f));
+        }
 
         // ---------------- Water world ----------------
 

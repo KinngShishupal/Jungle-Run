@@ -37,7 +37,9 @@ namespace JungleEscape
         bool charging;
         Transform body;
         Transform[] legs;
-        float phase;
+        float phase, speedNow;
+        QuadRig quad;
+        bool quadChecked;
 
         public bool Charges => Type == ObstacleType.Boar || Type == ObstacleType.Tiger;
 
@@ -46,21 +48,36 @@ namespace JungleEscape
             if (Handled) return;
 
             if (!Charges) return;
+            if (!quadChecked) { quad = GetComponent<QuadRig>(); quadChecked = true; }
             var gm = GameManager.I;
-            if (gm == null || gm.State != GameState.Playing) return;
+            if (gm == null || gm.State != GameState.Playing)
+            {
+                if (quad != null) quad.Speed = 0f;
+                return;
+            }
 
             float gap = S - gm.Player.TrackS;
             float wake = Type == ObstacleType.Tiger ? WakeDistance * 0.8f : WakeDistance;
             if (!charging && gap < wake && gap > 0f) charging = true;
             if (!charging)
             {
-                if (Type == ObstacleType.Tiger) TigerCrouch();
+                if (quad != null) { quad.Speed = 0f; quad.Waiting = Type == ObstacleType.Tiger; }
+                else if (Type == ObstacleType.Tiger) TigerCrouch();
                 return;
             }
 
             float speed = Type == ObstacleType.Tiger ? TigerSpeed : BoarSpeed;
+            if (quad != null)
+            {
+                // Articulated animals accelerate from a standstill: a pounce for cats, a lumbering start for rhinos.
+                speedNow = Mathf.MoveTowards(speedNow, speed, Time.deltaTime * (Type == ObstacleType.Tiger ? 14f : 9f));
+                speed = speedNow;
+                quad.Waiting = false;
+                quad.Speed = speed;
+            }
             S -= speed * Time.deltaTime;
             (Path ?? TrackPath.Active).PlaceOn(transform, Lane * PlayerController.LaneWidth, 0f, S);
+            if (quad != null) return;
 
             // Gallop: diagonal leg pairs swing together, body bobs and pitches.
             float t = Time.time * (Type == ObstacleType.Tiger ? 13f : 16f);
@@ -144,7 +161,7 @@ namespace JungleEscape
                     col.center = new Vector3(0f, 0.55f, 0f);
                     col.size = new Vector3(1.2f, 1.0f, 1.7f);
                     MakeMoving(go);
-                    if (ob.Creature == Creature.WoollyRhino) Creatures.BuildRhino(t, true, out ob.legs, out ob.body);
+                    if (ob.Creature == Creature.WoollyRhino) Creatures.BuildWoollyRhino(t, out ob.legs, out ob.body);
                     else if (ob.Creature == Creature.Crocodile) Creatures.BuildCrocodile(t, out ob.legs, out ob.body);
                     else BuildBoar(ob, t);
                     break;

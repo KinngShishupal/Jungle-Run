@@ -111,6 +111,26 @@ namespace JungleEscape
         static GameObject P(Mesh m, string name, Transform parent, Vector3 pos, Vector3 scale, Material mat, Vector3? euler = null, bool shadows = true)
             => Prim.Shape(m, name, parent, pos, scale, mat, euler, shadows);
 
+        // ---------------- Articulated legs ----------------
+
+        /// <summary>A leg with a hip and a knee joint; the foot sits at the end of the lower segment.</summary>
+        static void Leg(Transform parent, Vector3 hipPos, float upper, float lower, float r0, float r1, float r2,
+                        Material mat, Material footMat, Vector3 footScale, out Transform hip, out Transform knee)
+        {
+            hip = Prim.Group("Hip", parent, hipPos);
+            P(Limb(upper, r0, r1), "Upper", hip, Vector3.zero, Vector3.one, mat);
+            knee = Prim.Group("Knee", hip, new Vector3(0f, -upper, 0f));
+            P(Ball, "Joint", knee, Vector3.zero, Vector3.one * r1 * 2.1f, mat);
+            P(Limb(lower, r1, r2), "Lower", knee, Vector3.zero, Vector3.one, mat);
+            P(Ball, "Foot", knee, new Vector3(0f, -lower, -0.03f), footScale, footMat);
+        }
+
+        /// <summary>Flattened mounds of snow resting on an animal's back.</summary>
+        static void SnowOnBack(Transform parent, Vector3 pos, Vector3 size)
+        {
+            P(Lump(3), "Snow", parent, pos, size, Mats.Snow, null, false);
+        }
+
         // ---------------- Big cats & wolves (fast chargers) ----------------
 
         public enum CatKind { Sabertooth, Werewolf }
@@ -119,23 +139,47 @@ namespace JungleEscape
         {
             bool wolf = kind == CatKind.Werewolf;
             var fur = wolf ? Fur("WerewolfFur", new Color(0.2f, 0.19f, 0.18f)) : Fur("SabreFur", new Color(0.72f, 0.55f, 0.34f));
-            var dark = wolf ? Fur("WerewolfDark", new Color(0.09f, 0.085f, 0.08f)) : Fur("SabreDark", new Color(0.5f, 0.36f, 0.2f));
+            var dark = wolf ? Fur("WerewolfDark", new Color(0.09f, 0.085f, 0.08f)) : Fur("SabreDark", new Color(0.46f, 0.32f, 0.18f));
             var light = wolf ? Fur("WerewolfBelly", new Color(0.32f, 0.3f, 0.28f)) : Fur("SabreBelly", new Color(0.9f, 0.84f, 0.7f));
             var eye = wolf ? Glow("WolfEye", new Color(1f, 0.85f, 0.1f), new Color(3f, 2.2f, 0.2f)) : Glow("SabreEye", new Color(0.8f, 0.6f, 0.1f), new Color(0.4f, 0.3f, 0.02f));
 
-            body = Prim.Group("Body", t, Vector3.zero);
+            var rig = t.gameObject.AddComponent<QuadRig>();
+            rig.Cat = true;
+            rig.DustColor = wolf ? new Color(0.25f, 0.27f, 0.25f, 0.5f) : new Color(0.95f, 0.97f, 1f, 0.65f);
+            body = rig.Body = Prim.Group("Body", t, Vector3.zero);
+            var front = rig.Front = Prim.Group("Front", body, new Vector3(0f, 0.95f, -0.15f));
+            var rear = rig.Rear = Prim.Group("Rear", body, new Vector3(0f, 0.93f, 0.2f));
             float s = wolf ? 1.08f : 1f;
-            P(wolf ? Lump(0) : Ball, "Torso", body, new Vector3(0f, 0.82f, 0.1f), new Vector3(0.64f, 0.66f, 1.7f) * s, fur);
-            P(wolf ? Lump(1) : Ball, "Chest", body, new Vector3(0f, 0.9f, -0.55f), new Vector3(0.74f, 0.8f, 0.78f) * s, fur);
-            P(Ball, "Belly", body, new Vector3(0f, 0.62f, -0.1f), new Vector3(0.48f, 0.3f, 1.2f), light);
+
+            // Heavy, muscular forequarters; leaner hindquarters
+            P(wolf ? Lump(1) : Ball, "Chest", front, new Vector3(0f, 0.02f, -0.35f), new Vector3(0.78f, 0.86f, 0.9f) * s, fur);
+            P(Ball, "Shoulders", front, new Vector3(0f, 0.24f, -0.22f), new Vector3(0.72f, 0.5f, 0.62f) * s, dark);
+            P(Ball, "ChestFur", front, new Vector3(0f, -0.24f, -0.3f), new Vector3(0.5f, 0.32f, 0.7f), light);
+            P(Ball, "Neck", front, new Vector3(0f, 0.16f, -0.65f), new Vector3(0.46f, 0.48f, 0.52f) * s, fur);
+            P(wolf ? Lump(0) : Ball, "Back", rear, new Vector3(0f, 0f, 0.15f), new Vector3(0.64f, 0.66f, 1.0f) * s, fur);
+            P(Ball, "Haunch", rear, new Vector3(0f, 0.03f, 0.55f), new Vector3(0.7f, 0.74f, 0.6f) * s, fur);
+            P(Ball, "Belly", rear, new Vector3(0f, -0.24f, 0.15f), new Vector3(0.46f, 0.28f, 0.85f), light);
             if (wolf)
             {
-                // Shaggy mane and hackles
                 for (int i = 0; i < 6; i++)
-                    P(Lump(i), "Mane", body, new Vector3(0f, 1.15f - i * 0.03f, -0.8f + i * 0.28f), new Vector3(0.42f, 0.32f, 0.42f), i % 2 == 0 ? dark : fur);
+                    P(Lump(i), "Mane", i < 3 ? front : rear, new Vector3(0f, 0.32f - i * 0.02f, i < 3 ? -0.55f + i * 0.2f : -0.1f + (i - 3) * 0.25f),
+                      new Vector3(0.42f, 0.32f, 0.42f), i % 2 == 0 ? dark : fur);
+            }
+            else
+            {
+                // Faint spots on the flanks, and snow settled on the back
+                for (int i = 0; i < 12; i++)
+                {
+                    float side = i % 2 == 0 ? -1f : 1f;
+                    var parent = i < 6 ? front : rear;
+                    P(Ball, "Spot", parent, new Vector3(side * 0.33f, Random.Range(-0.05f, 0.22f), Random.Range(-0.5f, 0.6f)),
+                      new Vector3(0.04f, Random.Range(0.08f, 0.12f), Random.Range(0.1f, 0.15f)), dark, null, false);
+                }
+                SnowOnBack(front, new Vector3(0f, 0.42f, -0.25f), new Vector3(0.45f, 0.1f, 0.55f));
+                SnowOnBack(rear, new Vector3(0f, 0.32f, 0.3f), new Vector3(0.4f, 0.09f, 0.6f));
             }
 
-            var head = Prim.Group("Head", body, new Vector3(0f, 1.08f, -1.05f));
+            var head = rig.Head = Prim.Group("Head", front, new Vector3(0f, 0.22f, -0.88f));
             if (wolf)
             {
                 P(Lump(2), "Skull", head, Vector3.zero, new Vector3(0.42f, 0.4f, 0.44f), fur);
@@ -152,6 +196,7 @@ namespace JungleEscape
             else
             {
                 P(Ball, "Skull", head, Vector3.zero, new Vector3(0.46f, 0.42f, 0.46f), fur);
+                P(Ball, "Cheeks", head, new Vector3(0f, -0.06f, -0.05f), new Vector3(0.52f, 0.3f, 0.36f), fur);
                 P(Ball, "Muzzle", head, new Vector3(0f, -0.1f, -0.22f), new Vector3(0.26f, 0.18f, 0.2f), light);
                 P(Ball, "Nose", head, new Vector3(0f, -0.04f, -0.31f), new Vector3(0.07f, 0.05f, 0.05f), Black);
                 for (int k = -1; k <= 1; k += 2)
@@ -160,142 +205,175 @@ namespace JungleEscape
                     P(Ball, "Eye", head, new Vector3(k * 0.1f, 0.05f, -0.2f), new Vector3(0.06f, 0.045f, 0.04f), eye, null, false);
                     // The famous sabre fangs, curving down past the jaw
                     var fang = new List<Vector3> { Vector3.zero, new Vector3(0f, -0.12f, -0.015f), new Vector3(0f, -0.24f, 0.01f), new Vector3(0f, -0.32f, 0.05f) };
-                    P(Curve(fang, 0.028f, 0.004f), "Sabre", head, new Vector3(k * 0.06f, -0.13f, -0.24f), Vector3.one, Ivory);
+                    P(Curve(fang, 0.03f, 0.004f), "Sabre", head, new Vector3(k * 0.06f, -0.13f, -0.24f), Vector3.one, Ivory);
                 }
             }
 
-            // Tail: long bushy for the wolf, a short bob for the sabre-tooth
+            rig.Tail = Prim.Group("Tail", rear, new Vector3(0f, 0.1f, 0.82f));
             if (wolf)
-            {
                 for (int i = 0; i < 3; i++)
-                    P(Lump(i + 1), "Tail", body, new Vector3(0f, 0.88f - i * 0.12f, 0.95f + i * 0.28f), new Vector3(0.26f, 0.26f, 0.36f) * (1f - i * 0.15f), dark);
-            }
-            else P(Ball, "BobTail", body, new Vector3(0f, 0.95f, 0.95f), new Vector3(0.14f, 0.14f, 0.2f), fur);
+                    P(Lump(i + 1), "Tail", rig.Tail, new Vector3(0f, -i * 0.12f, i * 0.28f), new Vector3(0.26f, 0.26f, 0.36f) * (1f - i * 0.15f), dark);
+            else P(Ball, "BobTail", rig.Tail, Vector3.zero, new Vector3(0.14f, 0.14f, 0.22f), fur);
 
-            Vector3[] hips = { new Vector3(-0.22f, 0.66f, -0.55f), new Vector3(0.22f, 0.66f, -0.55f),
-                               new Vector3(-0.22f, 0.66f, 0.6f), new Vector3(0.22f, 0.66f, 0.6f) };
-            legs = new Transform[4];
-            var limb = Limb(0.64f, 0.11f, 0.08f);
+            rig.Hips = new Transform[4];
+            rig.Knees = new Transform[4];
+            rig.LowerLength = new[] { 0.36f, 0.36f, 0.38f, 0.38f };
+            var paw = new Vector3(0.18f, 0.1f, 0.22f);
             for (int i = 0; i < 4; i++)
             {
-                var leg = Prim.Group("Leg" + i, body, hips[i]);
-                P(limb, "Leg", leg, Vector3.zero, Vector3.one, fur);
-                P(Ball, "Paw", leg, new Vector3(0f, -0.64f, -0.04f), new Vector3(0.17f, 0.09f, 0.21f), dark);
-                legs[i] = leg;
+                float side = i % 2 == 0 ? -1f : 1f;
+                bool isFront = i < 2;
+                Leg(isFront ? front : rear, isFront ? new Vector3(side * 0.22f, -0.15f, -0.42f) : new Vector3(side * 0.22f, -0.12f, 0.55f),
+                    isFront ? 0.42f : 0.44f, rig.LowerLength[i], 0.13f * s, 0.095f, 0.07f, fur, dark, paw, out rig.Hips[i], out rig.Knees[i]);
             }
+            rig.StrideLength = 3.4f;
+            rig.HipSwing = 42f;
+            rig.KneeBend = 70f;
+            rig.Offsets = new[] { 0f, 0.1f, 0.48f, 0.6f };   // rotary gallop: front pair, then hind pair
+            rig.Bob = 0.09f;
+            rig.Flex = 9f;
+            rig.Pitch = 4f;
+            rig.Snap();
+            legs = rig.Hips;
         }
 
-        // ---------------- Rhinos (chargers) ----------------
+        // ---------------- Woolly rhino (charger) ----------------
 
-        public static void BuildRhino(Transform t, bool woolly, out Transform[] legs, out Transform body)
+        public static void BuildWoollyRhino(Transform t, out Transform[] legs, out Transform body)
         {
-            var skin = woolly ? Fur("WoollyRhinoFur", new Color(0.36f, 0.24f, 0.14f)) : Hide("RhinoHide", new Color(0.33f, 0.31f, 0.3f));
-            var dark = woolly ? Fur("WoollyRhinoDark", new Color(0.2f, 0.13f, 0.08f)) : Hide("RhinoHideDark", new Color(0.22f, 0.21f, 0.2f));
+            var fur = Fur("WoollyRhinoFur", new Color(0.38f, 0.25f, 0.15f));
+            var dark = Fur("WoollyRhinoDark", new Color(0.2f, 0.13f, 0.08f));
             var horn = Mats.Lit("Horn", Tex.Bark, new Color(0.55f, 0.48f, 0.38f), 0.35f, tiling: new Vector2(1f, 3f));
 
-            body = Prim.Group("Body", t, Vector3.zero);
-            P(woolly ? Lump(0) : Ball, "Torso", body, new Vector3(0f, 1.05f, 0.1f), new Vector3(1.15f, 1.15f, 2.3f), skin);
-            P(woolly ? Lump(1) : Ball, "Shoulders", body, new Vector3(0f, 1.25f, -0.55f), new Vector3(1.1f, 1.15f, 1.0f), skin);
-            if (woolly)
-            {
-                P(Lump(2), "Hump", body, new Vector3(0f, 1.7f, -0.5f), new Vector3(0.8f, 0.55f, 0.8f), dark);
-                for (int i = 0; i < 6; i++)
-                    P(Lump(i), "Shag", body, new Vector3((i % 2 == 0 ? -1 : 1) * 0.45f, 0.62f, -0.8f + i * 0.32f), new Vector3(0.4f, 0.45f, 0.4f), dark);
-            }
-            else
-            {
-                // Armour-like skin folds
-                for (int i = 0; i < 2; i++)
-                    P(Ball, "Fold", body, new Vector3(0f, 1.1f, -0.15f + i * 0.75f), new Vector3(1.2f, 1.18f, 0.18f), dark);
-            }
+            var rig = t.gameObject.AddComponent<QuadRig>();
+            body = rig.Body = Prim.Group("Body", t, Vector3.zero);
+            var front = rig.Front = Prim.Group("Front", body, new Vector3(0f, 1.15f, -0.3f));
+            var rear = rig.Rear = Prim.Group("Rear", body, new Vector3(0f, 1.12f, 0.4f));
 
-            var head = Prim.Group("Head", body, new Vector3(0f, 0.98f, -1.35f));
-            head.localRotation = Quaternion.Euler(-14f, 0f, 0f);
-            P(Ball, "Skull", head, Vector3.zero, new Vector3(0.6f, 0.58f, 0.85f), skin);
-            P(Ball, "Snout", head, new Vector3(0f, -0.1f, -0.42f), new Vector3(0.48f, 0.42f, 0.4f), skin);
-            P(Cone(woolly ? 0.95f : 0.7f, 0.13f), "Horn", head, new Vector3(0f, 0.08f, -0.55f), Vector3.one, horn, new Vector3(-48f, 0f, 0f));
-            P(Cone(0.32f, 0.08f), "Horn2", head, new Vector3(0f, 0.2f, -0.25f), Vector3.one, horn, new Vector3(-20f, 0f, 0f));
+            P(Lump(0), "Shoulders", front, new Vector3(0f, 0.1f, -0.3f), new Vector3(1.15f, 1.2f, 1.1f), fur);
+            P(Lump(2), "Hump", front, new Vector3(0f, 0.62f, -0.2f), new Vector3(0.8f, 0.55f, 0.8f), dark);
+            P(Lump(1), "Torso", rear, new Vector3(0f, 0f, 0.3f), new Vector3(1.1f, 1.1f, 1.5f), fur);
+            P(Lump(3), "Rump", rear, new Vector3(0f, 0f, 0.95f), new Vector3(1.0f, 0.95f, 0.7f), fur);
+            // Long shaggy hair hanging below the body
+            for (int i = 0; i < 14; i++)
+            {
+                float side = i % 2 == 0 ? -1f : 1f;
+                var parent = i < 7 ? front : rear;
+                float z = i < 7 ? Mathf.Lerp(-0.75f, 0.1f, (i / 2) / 3f) : Mathf.Lerp(0f, 1.1f, ((i - 7) / 2) / 3f);
+                P(Lump(i), "Shag", parent, new Vector3(side * Random.Range(0.3f, 0.5f), -0.48f, z), new Vector3(0.24f, 0.72f, 0.24f), dark,
+                  new Vector3(Random.Range(-8f, 8f), 0f, side * Random.Range(4f, 12f)));
+            }
+            SnowOnBack(front, new Vector3(0f, 0.88f, -0.15f), new Vector3(0.6f, 0.14f, 0.6f));
+            SnowOnBack(rear, new Vector3(0f, 0.55f, 0.5f), new Vector3(0.7f, 0.12f, 0.9f));
+
+            var head = rig.Head = Prim.Group("Head", front, new Vector3(0f, -0.05f, -0.98f));
+            var tilt = Prim.Group("Tilt", head, Vector3.zero);
+            tilt.localRotation = Quaternion.Euler(-18f, 0f, 0f); // carried low, horn forward
+            P(Lump(1), "Skull", tilt, Vector3.zero, new Vector3(0.62f, 0.62f, 0.92f), fur);
+            P(Ball, "Snout", tilt, new Vector3(0f, -0.1f, -0.45f), new Vector3(0.5f, 0.42f, 0.42f), dark);
+            P(Cone(1.0f, 0.14f), "Horn", tilt, new Vector3(0f, 0.08f, -0.56f), Vector3.one, horn, new Vector3(-55f, 0f, 0f));
+            P(Cone(0.4f, 0.09f), "Horn2", tilt, new Vector3(0f, 0.22f, -0.25f), Vector3.one, horn, new Vector3(-22f, 0f, 0f));
             for (int k = -1; k <= 1; k += 2)
             {
-                P(Cone(0.18f, 0.06f), "Ear", head, new Vector3(k * 0.2f, 0.28f, 0.25f), Vector3.one, skin, new Vector3(0f, 0f, k * -20f));
-                P(Ball, "Eye", head, new Vector3(k * 0.26f, 0.06f, -0.15f), Vector3.one * 0.05f, Black, null, false);
+                P(Cone(0.18f, 0.06f), "Ear", tilt, new Vector3(k * 0.2f, 0.3f, 0.25f), Vector3.one, fur, new Vector3(0f, 0f, k * -20f));
+                P(Ball, "Eye", tilt, new Vector3(k * 0.27f, 0.06f, -0.15f), Vector3.one * 0.05f, Black, null, false);
             }
-            P(Ball, "Tail", body, new Vector3(0f, 1.25f, 1.25f), new Vector3(0.1f, 0.25f, 0.1f), dark);
+            rig.Tail = Prim.Group("Tail", rear, new Vector3(0f, 0.15f, 1.3f));
+            P(Lump(2), "Tail", rig.Tail, new Vector3(0f, -0.15f, 0.05f), new Vector3(0.12f, 0.35f, 0.12f), dark);
 
-            Vector3[] hips = { new Vector3(-0.36f, 0.8f, -0.75f), new Vector3(0.36f, 0.8f, -0.75f),
-                               new Vector3(-0.36f, 0.8f, 0.8f), new Vector3(0.36f, 0.8f, 0.8f) };
-            legs = new Transform[4];
-            var limb = Limb(0.78f, 0.17f, 0.14f);
+            rig.Hips = new Transform[4];
+            rig.Knees = new Transform[4];
+            rig.LowerLength = new[] { 0.42f, 0.42f, 0.42f, 0.42f };
             for (int i = 0; i < 4; i++)
             {
-                var leg = Prim.Group("Leg" + i, body, hips[i]);
-                P(limb, "Leg", leg, Vector3.zero, Vector3.one, skin);
-                P(Ball, "Foot", leg, new Vector3(0f, -0.78f, 0f), new Vector3(0.3f, 0.12f, 0.3f), dark);
-                legs[i] = leg;
+                float side = i % 2 == 0 ? -1f : 1f;
+                bool isFront = i < 2;
+                Leg(isFront ? front : rear, isFront ? new Vector3(side * 0.38f, -0.25f, -0.45f) : new Vector3(side * 0.38f, -0.22f, 1.0f),
+                    0.48f, 0.42f, 0.2f, 0.17f, 0.15f, fur, dark, new Vector3(0.32f, 0.12f, 0.32f), out rig.Hips[i], out rig.Knees[i]);
             }
+            rig.StrideLength = 2.6f;
+            rig.HipSwing = 28f;
+            rig.KneeBend = 50f;
+            rig.Offsets = new[] { 0f, 0.07f, 0.5f, 0.57f };  // heavy transverse gallop
+            rig.Bob = 0.11f;
+            rig.Flex = 3f;
+            rig.Pitch = 5f;
+            rig.Snap();
+            legs = rig.Hips;
         }
 
         // ---------------- Woolly mammoth (blocker) ----------------
 
         public static void BuildMammoth(Transform t)
         {
-            var fur = Fur("MammothFur", new Color(0.38f, 0.23f, 0.12f));
+            var fur = Fur("MammothFur", new Color(0.4f, 0.24f, 0.13f));
             var dark = Fur("MammothDark", new Color(0.22f, 0.13f, 0.07f));
             var rig = t.gameObject.AddComponent<MammothRig>();
             var body = rig.Body = Prim.Group("Body", t, Vector3.zero);
 
-            // Pillar legs with long hair hanging over them
-            Vector3[] hips = { new Vector3(-0.6f, 1.5f, -0.95f), new Vector3(0.6f, 1.5f, -0.95f), new Vector3(-0.6f, 1.5f, 1.0f), new Vector3(0.6f, 1.5f, 1.0f) };
-            rig.Legs = new Transform[4];
+            // Pillar legs with knees, long hair hanging over them
+            rig.Hips = new Transform[4];
+            rig.Knees = new Transform[4];
             for (int i = 0; i < 4; i++)
             {
-                var leg = Prim.Group("Leg" + i, body, hips[i]);
-                P(Limb(1.5f, 0.32f, 0.28f), "Leg", leg, Vector3.zero, Vector3.one, fur);
-                P(Ball, "Foot", leg, new Vector3(0f, -1.48f, 0f), new Vector3(0.62f, 0.2f, 0.62f), dark);
-                P(Lump(i), "Hair", leg, new Vector3(0f, -0.35f, 0f), new Vector3(0.75f, 0.9f, 0.75f), dark);
-                rig.Legs[i] = leg;
+                float side = i % 2 == 0 ? -1f : 1f;
+                bool isFront = i < 2;
+                float upper = isFront ? 1.0f : 0.92f, lower = isFront ? 0.95f : 0.85f;
+                var hipPos = isFront ? new Vector3(side * 0.62f, 2.05f, -0.95f) : new Vector3(side * 0.58f, 1.87f, 1.05f);
+                Leg(body, hipPos, upper, lower, 0.36f, 0.32f, 0.3f, fur, dark, new Vector3(0.66f, 0.2f, 0.66f), out rig.Hips[i], out rig.Knees[i]);
+                P(Lump(i), "LegHair", rig.Hips[i], new Vector3(0f, -0.45f, 0f), new Vector3(0.82f, 1.05f, 0.82f), dark);
             }
-            P(Lump(0), "Torso", body, new Vector3(0f, 2.15f, 0.1f), new Vector3(2.1f, 1.95f, 3.3f), fur);
-            P(Lump(1), "Hump", body, new Vector3(0f, 3.05f, -0.7f), new Vector3(1.5f, 1.0f, 1.5f), fur);
-            for (int i = 0; i < 8; i++)
-            {
-                float a = i / 8f * Mathf.PI * 2f;
-                P(Lump(i), "Shag", body, new Vector3(Mathf.Cos(a) * 1.0f, 1.45f, Mathf.Sin(a) * 1.5f), new Vector3(0.75f, 0.8f, 0.75f), dark);
-            }
-            P(Lump(2), "Tail", body, new Vector3(0f, 2.3f, 1.75f), new Vector3(0.2f, 0.45f, 0.2f), dark);
 
-            var head = rig.Head = Prim.Group("Head", body, new Vector3(0f, 2.75f, -1.75f));
-            P(Lump(3), "Skull", head, new Vector3(0f, 0.15f, 0f), new Vector3(1.15f, 1.25f, 1.05f), fur);
-            P(Lump(1), "Dome", head, new Vector3(0f, 0.65f, 0.1f), new Vector3(0.7f, 0.5f, 0.7f), dark);
+            // Sloping back: tall shoulder hump, lower rump
+            var torso = P(Lump(0), "Torso", body, new Vector3(0f, 2.3f, 0.05f), new Vector3(2.1f, 2.0f, 3.2f), fur);
+            torso.transform.localRotation = Quaternion.Euler(7f, 0f, 0f);
+            P(Lump(1), "Hump", body, new Vector3(0f, 3.3f, -0.75f), new Vector3(1.5f, 1.1f, 1.4f), fur);
+            P(Lump(2), "Rump", body, new Vector3(0f, 2.05f, 1.25f), new Vector3(1.6f, 1.5f, 1.2f), fur);
+            for (int i = 0; i < 22; i++)
+            {
+                float a = i / 22f * Mathf.PI * 2f;
+                P(Lump(i), "HairSkirt", body, new Vector3(Mathf.Cos(a) * 1.0f, 1.45f, Mathf.Sin(a) * 1.55f), new Vector3(0.32f, 1.1f, 0.32f), dark,
+                  new Vector3(Random.Range(-8f, 8f), 0f, Random.Range(-8f, 8f)));
+            }
+            SnowOnBack(body, new Vector3(0f, 3.82f, -0.7f), new Vector3(1.1f, 0.22f, 1.0f));
+            SnowOnBack(body, new Vector3(0.1f, 3.2f, 0.45f), new Vector3(1.2f, 0.2f, 1.3f));
+            var tail = Prim.Group("Tail", body, new Vector3(0f, 2.5f, 1.8f));
+            P(Limb(0.6f, 0.06f, 0.04f), "Tail", tail, Vector3.zero, Vector3.one, fur, new Vector3(-20f, 0f, 0f));
+            P(Lump(3), "Tuft", tail, new Vector3(0f, -0.58f, 0.2f), new Vector3(0.16f, 0.25f, 0.16f), dark);
+
+            var head = rig.Head = Prim.Group("Head", body, new Vector3(0f, 2.9f, -1.85f));
+            P(Lump(3), "Skull", head, new Vector3(0f, 0.15f, 0f), new Vector3(1.15f, 1.3f, 1.05f), fur);
+            P(Lump(1), "Dome", head, new Vector3(0f, 0.78f, 0.1f), new Vector3(0.75f, 0.55f, 0.7f), dark);
             for (int k = -1; k <= 1; k += 2)
             {
                 var ear = Prim.Group("Ear", head, new Vector3(k * 0.5f, 0.2f, 0.15f));
                 P(Lump(k + 2), "EarFlap", ear, new Vector3(k * 0.12f, -0.1f, 0f), new Vector3(0.12f, 0.45f, 0.35f), dark);
                 if (k < 0) rig.EarL = ear; else rig.EarR = ear;
                 P(Ball, "Eye", head, new Vector3(k * 0.36f, 0.15f, -0.42f), Vector3.one * 0.07f, Black, null, false);
-                // Great curving tusks
                 var tusk = new List<Vector3>
                 {
-                    Vector3.zero, new Vector3(k * 0.12f, -0.45f, -0.45f), new Vector3(k * 0.2f, -0.6f, -1.05f),
-                    new Vector3(k * 0.1f, -0.35f, -1.6f), new Vector3(k * -0.15f, 0.15f, -1.85f)
+                    Vector3.zero, new Vector3(k * 0.14f, -0.5f, -0.5f), new Vector3(k * 0.24f, -0.68f, -1.2f),
+                    new Vector3(k * 0.12f, -0.4f, -1.8f), new Vector3(k * -0.18f, 0.18f, -2.1f)
                 };
-                P(Curve(tusk, 0.13f, 0.035f), "Tusk", head, new Vector3(k * 0.3f, -0.35f, -0.4f), Vector3.one, Ivory);
+                P(Curve(tusk, 0.14f, 0.035f), "Tusk", head, new Vector3(k * 0.3f, -0.35f, -0.4f), Vector3.one, Ivory);
             }
 
-            // Trunk: a chain of segments that can swing, curl and raise to trumpet
-            rig.Trunk = new Transform[8];
-            Transform parent = head;
+            // Trunk: a chain of segments that swings, curls and raises to trumpet; two "fingers" at the tip.
+            rig.Trunk = new Transform[9];
+            Transform parentSeg = head;
             var pos = new Vector3(0f, -0.2f, -0.5f);
             for (int i = 0; i < rig.Trunk.Length; i++)
             {
                 float k = i / (float)rig.Trunk.Length;
-                var seg = Prim.Group("Trunk" + i, parent, pos);
-                P(Limb(0.33f, Mathf.Lerp(0.2f, 0.08f, k), Mathf.Lerp(0.18f, 0.07f, k)), "Seg", seg, Vector3.zero, Vector3.one, fur);
+                var seg = Prim.Group("Trunk" + i, parentSeg, pos);
+                P(Limb(0.31f, Mathf.Lerp(0.2f, 0.075f, k), Mathf.Lerp(0.18f, 0.065f, k)), "Seg", seg, Vector3.zero, Vector3.one, fur);
                 rig.Trunk[i] = seg;
-                parent = seg;
-                pos = new Vector3(0f, -0.3f, 0f);
+                parentSeg = seg;
+                pos = new Vector3(0f, -0.28f, 0f);
             }
-            rig.Pose(0.2f, 0f);
+            P(Ball, "TipA", parentSeg, new Vector3(0.025f, -0.3f, -0.02f), new Vector3(0.06f, 0.08f, 0.06f), dark);
+            P(Ball, "TipB", parentSeg, new Vector3(-0.025f, -0.31f, 0.02f), new Vector3(0.05f, 0.06f, 0.05f), dark);
+            rig.Pose(0.2f, 0f, 0f);
         }
 
         // ---------------- Swamp ghoul (blocker) ----------------
@@ -689,37 +767,200 @@ namespace JungleEscape
         protected bool Active => ob == null || !ob.Handled;
     }
 
-    /// <summary>Woolly mammoth: swings its trunk and flaps its ears, then raises its trunk to trumpet.</summary>
+    /// <summary>
+    /// Articulated four-legged gait: every leg has a hip and a knee, plants during its stance phase and
+    /// folds up as it swings forward. The spine flexes, the body rises and pitches with the stride, the head
+    /// counter-rotates to stay steady, and feet kick up snow on touchdown. The owning Obstacle sets
+    /// <see cref="Speed"/> (ground speed) and <see cref="Waiting"/> (crouched, about to pounce).
+    /// </summary>
+    public class QuadRig : MonoBehaviour
+    {
+        public Transform Body, Front, Rear, Head, Tail;
+        public Transform[] Hips, Knees;
+        public float[] LowerLength, Offsets;
+        public float StrideLength = 2.5f, HipSwing = 35f, KneeBend = 60f, Bob = 0.1f, Flex = 5f, Pitch = 4f;
+        public float Duty = 0.45f;   // fraction of the cycle a foot spends on the ground
+        public bool Cat;
+        public Color DustColor = new Color(0.95f, 0.97f, 1f, 0.6f);
+
+        [System.NonSerialized] public float Speed;
+        [System.NonSerialized] public bool Waiting;
+
+        float cycle, run, crouch, time;
+        float[] prev;
+
+        void Start() => time = Random.value * 10f;
+
+        public void Snap()
+        {
+            prev = new float[Hips.Length];
+            Pose(0f, 0f, 0f, 0f);
+        }
+
+        void Update()
+        {
+            float dt = Time.deltaTime;
+            time += dt;
+            run = Mathf.MoveTowards(run, Speed > 0.5f ? 1f : 0f, dt * 3f);
+            crouch = Mathf.MoveTowards(crouch, Waiting && Cat ? 1f : 0f, dt * 2.5f);
+            cycle += Speed / Mathf.Max(0.1f, StrideLength) * dt;
+            if (cycle > 1000f) cycle -= 1000f;
+
+            Pose(cycle, run, crouch, time);
+
+            // Snow kicked up as each foot strikes the ground
+            if (run > 0.5f && Speed > 2f)
+            {
+                if (prev == null || prev.Length != Hips.Length) prev = new float[Hips.Length];
+                for (int i = 0; i < Hips.Length; i++)
+                {
+                    float p = Mathf.Repeat(cycle + Offsets[i], 1f);
+                    if (p < prev[i])
+                        Fx.Dust(Knees[i].TransformPoint(0f, -LowerLength[i], 0f), i < 2 ? 2 : 3, Cat ? 0.35f : 0.5f, DustColor);
+                    prev[i] = p;
+                }
+            }
+        }
+
+        public void Pose(float cyc, float run, float crouch, float t)
+        {
+            float w = cyc * Mathf.PI * 2f;
+            float breathe = Mathf.Sin(t * 1.8f);
+
+            for (int i = 0; i < Hips.Length; i++)
+            {
+                bool front = i < 2;
+                float p = Mathf.Repeat(cyc + Offsets[i], 1f);
+                float hip, knee;
+                if (p < Duty)
+                {
+                    // Stance: the planted foot sweeps backward under the body, knee flexing to take the weight.
+                    float u = p / Duty;
+                    hip = Mathf.Lerp(HipSwing, -HipSwing * 0.85f, u);
+                    knee = -12f * Mathf.Sin(u * Mathf.PI);
+                }
+                else
+                {
+                    // Swing: lift, fold the lower leg up and reach forward for the next strike.
+                    float u = (p - Duty) / (1f - Duty);
+                    float e = u * u * (3f - 2f * u);
+                    hip = Mathf.Lerp(-HipSwing * 0.85f, HipSwing * 1.05f, e);
+                    knee = -KneeBend * Mathf.Sin(u * Mathf.PI) * (front ? 1f : 0.8f);
+                }
+                if (!front) hip -= 6f; // hind legs angle back slightly
+
+                // Idle stance and the coiled pounce crouch
+                float idleHip = front ? 0f : -4f;
+                float idleKnee = 1.5f * breathe;
+                hip = Mathf.Lerp(idleHip, hip, run);
+                knee = Mathf.Lerp(idleKnee, knee, run);
+                hip = Mathf.Lerp(hip, front ? 28f : 38f, crouch);
+                knee = Mathf.Lerp(knee, front ? -55f : -75f, crouch);
+
+                Hips[i].localRotation = Quaternion.Euler(hip, 0f, 0f);
+                Knees[i].localRotation = Quaternion.Euler(knee, 0f, 0f);
+            }
+
+            // Body: rises during the airborne phase, pitches with the push-off; low and tense when crouched.
+            float lift = (0.5f + 0.5f * Mathf.Sin(w)) * Bob * run;
+            float sway = 0.03f * breathe * (1f - run);
+            Body.localPosition = new Vector3(0f, lift + sway * 0.5f - 0.2f * crouch + 0.02f * breathe * crouch, 0f);
+            float pitch = Pitch * Mathf.Sin(w + Mathf.PI * 0.5f) * run;
+            Body.localRotation = Quaternion.Euler(pitch + 3f * crouch, 0f, 1.2f * Mathf.Sin(w * 0.5f) * run);
+
+            // Spine: gathers and extends (strongly in cats, barely in rhinos)
+            float flex = Flex * Mathf.Sin(w) * run;
+            if (Front != null) Front.localRotation = Quaternion.Euler(flex - 4f * crouch, 0f, 0f);
+            if (Rear != null) Rear.localRotation = Quaternion.Euler(-flex + 3f * crouch, 0f, 0f);
+
+            // Head holds steady against the bounce; looks around a little while idle.
+            if (Head != null)
+            {
+                float look = Mathf.Sin(t * 0.45f) * 14f * (1f - run) * (1f - crouch);
+                Head.localRotation = Quaternion.Euler(-pitch - flex * 0.6f + 2f * breathe * (1f - run) + 4f * crouch, look, 0f);
+            }
+            if (Tail != null)
+            {
+                float twitch = Cat ? 18f * Mathf.Sin(t * 5f) * Mathf.Sin(t * 1.1f) * crouch : 0f;
+                Tail.localRotation = Quaternion.Euler(-15f - 12f * Mathf.Sin(w) * run + 6f * Mathf.Sin(t * 1.4f) * (1f - run),
+                                                      twitch + 8f * Mathf.Sin(t * 0.9f) * (1f - run), 0f);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Woolly mammoth: shifts its weight, swings its trunk and flaps its ears; as the runner approaches it
+    /// raises its trunk to trumpet and stamps its front feet, throwing up snow.
+    /// </summary>
     public class MammothRig : CreatureRig
     {
         public Transform Body, Head, EarL, EarR;
-        public Transform[] Trunk, Legs;
-        float alert;
+        public Transform[] Trunk, Hips, Knees;
+        float alert, stampClock;
+        int stampLeg;
+        bool down = true;
 
         void Update()
         {
             if (!Active) return;
-            time += Time.deltaTime;
-            alert = Mathf.MoveTowards(alert, Gap() < 30f ? 1f : 0f, Time.deltaTime * 1.2f);
-            Pose(Mathf.SmoothStep(0f, 1f, alert), time);
+            float dt = Time.deltaTime;
+            time += dt;
+            alert = Mathf.MoveTowards(alert, Gap() < 30f ? 1f : 0f, dt * 1.2f);
+            float a = Mathf.SmoothStep(0f, 1f, alert);
+
+            // Stamp cycle: lift a front foot slowly, hold, slam it down.
+            float lift = 0f;
+            if (a > 0.5f)
+            {
+                stampClock += dt / 1.6f;
+                if (stampClock >= 1f) { stampClock -= 1f; stampLeg = 1 - stampLeg; }
+                float c = stampClock;
+                lift = c < 0.4f ? Mathf.SmoothStep(0f, 1f, c / 0.4f) : c < 0.6f ? 1f : c < 0.68f ? 1f - (c - 0.6f) / 0.08f : 0f;
+                bool isDown = lift <= 0f;
+                if (isDown && !down)
+                {
+                    var foot = Knees[stampLeg].TransformPoint(0f, -0.95f, 0f);
+                    Fx.Dust(foot, 7, 1.3f, new Color(0.95f, 0.97f, 1f, 0.7f));
+                }
+                down = isDown;
+            }
+            else stampClock = 0f;
+
+            Pose(a, time, lift, stampLeg);
         }
 
-        public void Pose(float alert, float t)
+        public void Pose(float alert, float t, float lift, int leg = 0)
         {
-            Body.localRotation = Quaternion.Euler(0f, 0f, 2f * Mathf.Sin(t * 0.8f));
-            Head.localRotation = Quaternion.Euler(Mathf.Lerp(4f * Mathf.Sin(t * 0.7f), 16f, alert), 6f * Mathf.Sin(t * 0.5f), 0f);
-            EarL.localRotation = Quaternion.Euler(0f, 12f * Mathf.Sin(t * 1.6f) + 10f * alert, 0f);
-            EarR.localRotation = Quaternion.Euler(0f, -12f * Mathf.Sin(t * 1.6f + 0.5f) - 10f * alert, 0f);
+            // Slow weight shift from side to side; rears back a touch when alarmed.
+            float shift = Mathf.Sin(t * 0.8f);
+            Body.localPosition = new Vector3(0.06f * shift * (1f - alert), 0.03f * Mathf.Sin(t * 1.6f) + 0.12f * lift, 0.15f * alert);
+            Body.localRotation = Quaternion.Euler(4f * alert + 2.5f * lift, 0f, 2f * shift * (1f - alert) + (leg == 0 ? -2f : 2f) * lift);
+
+            Head.localRotation = Quaternion.Euler(Mathf.Lerp(4f * Mathf.Sin(t * 0.7f), 14f, alert) + 4f * lift,
+                                                  6f * Mathf.Sin(t * 0.5f) * (1f - alert) + 8f * Mathf.Sin(t * 2.2f) * alert, 0f);
+            float flap = Mathf.Sin(t * (1.6f + 3f * alert));
+            EarL.localRotation = Quaternion.Euler(0f, 12f * flap + 30f * alert, 0f);
+            EarR.localRotation = Quaternion.Euler(0f, -12f * flap - 30f * alert, 0f);
+
             for (int i = 0; i < Trunk.Length; i++)
             {
-                // Relaxed: hangs and swings. Alert: curls up and back to trumpet.
+                // Relaxed: hangs and swings with a wave down its length. Alert: curls up and back to trumpet.
                 float swing = 9f * Mathf.Sin(t * 1.3f - i * 0.55f);
-                float x = Mathf.Lerp(6f + swing, 24f + i * 3f, alert);
+                float x = Mathf.Lerp(5f + swing, 22f + i * 3.5f + 4f * Mathf.Sin(t * 6f - i), alert);
                 float z = Mathf.Lerp(7f * Mathf.Sin(t * 0.9f - i * 0.5f), 0f, alert);
                 Trunk[i].localRotation = Quaternion.Euler(x, 0f, z);
             }
-            for (int i = 0; i < Legs.Length; i++)
-                Legs[i].localRotation = Quaternion.Euler(3f * Mathf.Sin(t * 0.8f + i * 1.6f) * (1f - alert), 0f, 0f);
+
+            for (int i = 0; i < Hips.Length; i++)
+            {
+                bool front = i < 2;
+                float settle = 2f * Mathf.Sin(t * 0.8f + i * 1.6f) * (1f - alert);
+                float hip = settle, knee = -1.5f * Mathf.Abs(settle);
+                if (front && i == leg) { hip += 30f * lift; knee -= 55f * lift; }
+                if (!front) { hip -= 6f * alert; knee += 4f * alert; } // hind legs brace
+                Hips[i].localRotation = Quaternion.Euler(hip, 0f, 0f);
+                Knees[i].localRotation = Quaternion.Euler(knee, 0f, 0f);
+            }
         }
     }
 
