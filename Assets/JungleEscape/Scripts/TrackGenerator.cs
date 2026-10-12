@@ -303,11 +303,11 @@ namespace JungleEscape
                 if (!ob.Native) Biomes.RemapRenderers(ob.gameObject, biome); // world-specific animals keep their own look
             }
 
-            PlaceRewards(parent, row, z);
+            PlaceRewards(parent, row, z, biome);
             System.Array.Copy(row, lastRow, 3);
         }
 
-        void PlaceRewards(Transform parent, int[] row, float z)
+        void PlaceRewards(Transform parent, int[] row, float z, BiomeType biome)
         {
             var empties = new List<int>();
             var jumps = new List<int>();
@@ -337,7 +337,7 @@ namespace JungleEscape
                 {
                     float t = k / 3.5f;
                     float h = 0.9f + 1.4f * (1f - t * t);
-                    Pickup.Create(PickupType.Banana, new Vector3(lane * PlayerController.LaneWidth, h, z + k * 1.4f), parent);
+                    Pickup.Create(PickupType.Banana, new Vector3(lane * PlayerController.LaneWidth, h, z + k * 1.4f), parent, biome);
                 }
             }
             else if (branches.Count > 0 && r < 0.5f)
@@ -345,14 +345,14 @@ namespace JungleEscape
                 // Low line under a branch: rewards the roll
                 int lane = branches[Random.Range(0, branches.Count)] - 1;
                 for (int k = -2; k <= 2; k++)
-                    Pickup.Create(PickupType.Banana, new Vector3(lane * PlayerController.LaneWidth, 0.45f, z + k * 1.5f), parent);
+                    Pickup.Create(PickupType.Banana, new Vector3(lane * PlayerController.LaneWidth, 0.45f, z + k * 1.5f), parent, biome);
             }
             else if (empties.Count > 0 && r < 0.9f)
             {
                 // Straight trail through a free lane
                 int lane = empties[Random.Range(0, empties.Count)] - 1;
                 for (int k = -3; k <= 3; k++)
-                    Pickup.Create(PickupType.Banana, new Vector3(lane * PlayerController.LaneWidth, 0.9f, z + k * 1.8f), parent);
+                    Pickup.Create(PickupType.Banana, new Vector3(lane * PlayerController.LaneWidth, 0.9f, z + k * 1.8f), parent, biome);
             }
         }
 

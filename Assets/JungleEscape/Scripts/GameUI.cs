@@ -122,7 +122,7 @@ namespace JungleEscape
             var stats = new Rect(w / 2 - 330, h * 0.40f, 660, 190);
             GUI.Box(stats, GUIContent.none, panel);
             Shadow(new Rect(stats.x, stats.y + 18, stats.width, 70), $"Best   {gm.HighScore:N0}", mid, Cream);
-            Shadow(new Rect(stats.x, stats.y + 98, stats.width, 70), $"Bananas   {gm.TotalBananas:N0}", mid, Gold);
+            Shadow(new Rect(stats.x, stats.y + 98, stats.width, 70), $"Treasure   {gm.TotalBananas:N0}", mid, Gold);
 
             if (GUI.Button(new Rect(w / 2 - 300, h * 0.60f, 600, 170), "RUN", button)) gm.StartRun();
 
@@ -138,9 +138,10 @@ namespace JungleEscape
         {
             float top = 40f;
 
-            // Bananas (left)
-            GUI.Box(new Rect(20, top, 380, 100), GUIContent.none, panel);
-            Shadow(new Rect(48, top, 340, 100), $"{gm.RunBananas}  bananas", hudLeft, Gold);
+            // This world's money (left)
+            GUI.Box(new Rect(20, top, 380, 135), GUIContent.none, panel);
+            Shadow(new Rect(48, top - 6, 340, 100), gm.RunBananas.ToString("N0"), hudLeft, Gold);
+            Shadow(new Rect(48, top + 76, 340, 50), Pickup.CurrencyName(Biomes.Current), small, new Color(1f, 1f, 1f, 0.85f), TextAnchor.MiddleLeft);
 
             // Score + multiplier (right)
             GUI.Box(new Rect(w - 400, top, 380, 175), GUIContent.none, panel);
@@ -155,7 +156,7 @@ namespace JungleEscape
                 GUI.Button(new Rect(w / 2 - 60, top, 120, 100), "II", smallButton)) gm.Pause();
 
             // Active power-ups
-            float y = top + 130;
+            float y = top + 160;
             y = PowerBar(gm, PickupType.Magnet, "Vine Magnet", y);
             y = PowerBar(gm, PickupType.Glider, "Leaf Glider", y);
             y = PowerBar(gm, PickupType.Shield, "Coconut Helmet", y);
@@ -170,7 +171,7 @@ namespace JungleEscape
             if (gm.RunTime < 3.5f)
             {
                 float a = Mathf.Clamp01((3.5f - gm.RunTime) * 1.5f);
-                Shadow(new Rect(0, h * 0.70f, w, 90), "Swipe to dodge. Grab the bananas!", mid, new Color(Cream.r, Cream.g, Cream.b, a));
+                Shadow(new Rect(0, h * 0.70f, w, 90), $"Swipe to dodge. Grab the {Pickup.CurrencyName(Biomes.Current)}!", mid, new Color(Cream.r, Cream.g, Cream.b, a));
             }
         }
 
@@ -205,13 +206,13 @@ namespace JungleEscape
             Shadow(new Rect(0, y + 105, w, 70), gm.NewHighScore ? "New best!" : $"Best  {gm.HighScore:N0}", mid,
                    gm.NewHighScore ? Gold : new Color(1f, 1f, 1f, 0.85f));
             Ornament(w / 2, y + 190, 300);
-            Shadow(new Rect(0, y + 205, w, 60), $"Bananas this run  {gm.RunBananas}   ·   total {gm.TotalBananas}", small, Gold);
+            Shadow(new Rect(0, y + 205, w, 60), $"Treasure this run  {gm.RunBananas}   ·   total {gm.TotalBananas}", small, Gold);
             Shadow(new Rect(0, y + 265, w, 60), $"Distance  {Mathf.FloorToInt(gm.Distance)} m", small, Cream);
 
             float by = h * 0.55f;
             bool prev = GUI.enabled;
             GUI.enabled = gm.CanRevive;
-            if (GUI.Button(new Rect(w / 2 - 330, by, 660, 150), $"Revive  ·  {gm.ReviveCost} bananas", button)) gm.Revive();
+            if (GUI.Button(new Rect(w / 2 - 330, by, 660, 150), $"Revive  ·  {gm.ReviveCost} treasure", button)) gm.Revive();
             GUI.enabled = prev;
             if (GUI.Button(new Rect(w / 2 - 330, by + 180, 660, 150), "Play again", button)) gm.StartRun();
             if (GUI.Button(new Rect(w / 2 - 330, by + 360, 660, 150), "Home", button)) gm.GoToMenu();

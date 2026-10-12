@@ -21,7 +21,9 @@ namespace JungleEscape
 
         Transform visual, halo, shadow;
         Collider col;
-        float phase, wave, spin;
+        float phase, wave, spin, tilt = 18f, wobble = 8f, spinRate = 140f;
+        Color glow;
+        Currency kind;
         // Magnet pull: once grabbed, a banana homes in with real velocity (pops up, then curves in and accelerates).
         bool pulled;
         Vector3 vel;
@@ -46,10 +48,10 @@ namespace JungleEscape
             }
 
             // Idle: a row of bananas bobs as a travelling wave and each one turns with a lazy wobble.
-            spin += (pulled ? 900f : 140f) * dt;
+            spin += (pulled ? 900f : spinRate) * dt;
             float bob = 0.09f * Mathf.Sin(t * 2.6f - wave);
             if (!pulled) visual.localPosition = new Vector3(0f, bob, 0f);
-            visual.localRotation = Quaternion.Euler(0f, spin, 0f) * Quaternion.Euler(8f * Mathf.Sin(t * 1.7f + phase), 0f, 18f + 7f * Mathf.Sin(t * 2.1f + phase));
+            visual.localRotation = Quaternion.Euler(0f, spin, 0f) * Quaternion.Euler(wobble * Mathf.Sin(t * 1.7f + phase), 0f, tilt + wobble * 0.9f * Mathf.Sin(t * 2.1f + phase));
             if (halo != null) halo.localScale = Vector3.one * (0.9f + 0.06f * Mathf.Sin(t * 3.3f + phase));
             if (shadow != null)
             {
@@ -98,7 +100,7 @@ namespace JungleEscape
             if (halo != null) halo.localScale = Vector3.one * (1f + u);
             if (u >= 1f)
             {
-                Fx.Sparkle(visual.position, GlowColor(Type), 8);
+                Fx.Sparkle(visual.position, glow, 8);
                 gameObject.SetActive(false);
             }
         }
@@ -109,7 +111,7 @@ namespace JungleEscape
             GameManager.I.OnPickup(this);
             if (Type != PickupType.Banana)
             {
-                Fx.Sparkle(visual.position, GlowColor(Type), 24);
+                Fx.Sparkle(visual.position, glow, 24);
                 gameObject.SetActive(false);
                 return;
             }
@@ -118,12 +120,12 @@ namespace JungleEscape
             if (shadow != null) shadow.gameObject.SetActive(false);
             var gm = GameManager.I;
             collectFrom = gm != null && gm.Player != null ? transform.position - gm.Player.transform.position : Vector3.zero;
-            Fx.Sparkle(visual.position, GlowColor(Type), 4);
+            Fx.Sparkle(visual.position, glow, 4);
         }
 
         // ---------------- Factory ----------------
 
-        public static Pickup Create(PickupType type, Vector3 pos, Transform parent)
+        public static Pickup Create(PickupType type, Vector3 pos, Transform parent, BiomeType world = BiomeType.Jungle)
         {
             var go = new GameObject(type.ToString());
             go.transform.SetParent(parent, false);
@@ -143,11 +145,10 @@ namespace JungleEscape
             switch (type)
             {
                 case PickupType.Banana:
-                    // Ridged, tapered banana with a green-brown stalk and a dark blossom-end nub (tilt comes from Update).
-                    Prim.Shape(bananaMesh, "Banana", v, Vector3.zero, Vector3.one * 1.12f, Mats.Banana);
-                    Prim.Shape(stalkMesh, "Stalk", v, Vector3.zero, Vector3.one * 1.12f, StalkMat, null, false);
-                    Prim.Shape(ballMesh, "Nub", v, bananaTip * 1.12f, Vector3.one * 0.035f, NubMat, null, false);
-                    Prim.Shape(ballMesh, "StalkEnd", v, stalkEnd * 1.12f, Vector3.one * 0.05f, NubMat, null, false);
+                    // The money is different in every world.
+                    p.kind = CurrencyOf(world);
+                    p.glow = CurrencyGlow(p.kind);
+                    BuildCurrency(p, v);
                     break;
 
                 case PickupType.Magnet:
@@ -181,10 +182,11 @@ namespace JungleEscape
                     break;
             }
 
+            if (type != PickupType.Banana) p.glow = GlowColor(type);
             // Soft halo so collectibles read clearly against the foliage (does not spin).
             float hs = type == PickupType.Banana ? 0.9f : 1.9f;
             p.halo = Prim.Group("HaloPivot", go.transform, new Vector3(0f, 0f, 0.15f));
-            Prim.Shape(haloMesh, "Halo", p.halo, new Vector3(0f, hs * 0.5f, 0f), Vector3.one * hs, HaloMat(type), null, false);
+            Prim.Shape(haloMesh, "Halo", p.halo, new Vector3(0f, hs * 0.5f, 0f), Vector3.one * hs, HaloMat(p.glow, type == PickupType.Banana ? 0.24f : 0.4f), null, false);
 
             p.col = col;
             if (type == PickupType.Banana)
@@ -197,11 +199,117 @@ namespace JungleEscape
             return p;
         }
 
+        // ---------------- World currencies ----------------
+
+        public enum Currency { Banana, Acorn, GoldCoin, SoulOrb }
+
+        public static Currency CurrencyOf(BiomeType world)
+        {
+            switch (world)
+            {
+                case BiomeType.IceAge: return Currency.Acorn;
+                case BiomeType.WaterWorld: return Currency.GoldCoin;
+                case BiomeType.HorrorJungle: return Currency.SoulOrb;
+                default: return Currency.Banana;
+            }
+        }
+
+        /// <summary>Plural name of a world's money, for the HUD.</summary>
+        public static string CurrencyName(BiomeType world)
+        {
+            switch (CurrencyOf(world))
+            {
+                case Currency.Acorn: return "acorns";
+                case Currency.GoldCoin: return "gold coins";
+                case Currency.SoulOrb: return "soul orbs";
+                default: return "bananas";
+            }
+        }
+
+        static Color CurrencyGlow(Currency k)
+        {
+            switch (k)
+            {
+                case Currency.Acorn: return new Color(1f, 0.78f, 0.45f);
+                case Currency.GoldCoin: return new Color(1f, 0.8f, 0.3f);
+                case Currency.SoulOrb: return new Color(0.45f, 1f, 0.65f);
+                default: return new Color(1f, 0.85f, 0.35f);
+            }
+        }
+
+        static void BuildCurrency(Pickup p, Transform v)
+        {
+            switch (p.kind)
+            {
+                case Currency.Banana:
+                    // Ridged, tapered banana with a green-brown stalk and a dark blossom-end nub (tilt comes from Update).
+                    Prim.Shape(bananaMesh, "Banana", v, Vector3.zero, Vector3.one * 1.12f, Mats.Banana);
+                    Prim.Shape(stalkMesh, "Stalk", v, Vector3.zero, Vector3.one * 1.12f, StalkMat, null, false);
+                    Prim.Shape(ballMesh, "Nub", v, bananaTip * 1.12f, Vector3.one * 0.035f, NubMat, null, false);
+                    Prim.Shape(ballMesh, "StalkEnd", v, stalkEnd * 1.12f, Vector3.one * 0.05f, NubMat, null, false);
+                    break;
+
+                case Currency.Acorn:
+                {
+                    // A plump, glossy acorn in a scaly cap with a little stalk, dusted with frost.
+                    var shell = Mats.Lit("AcornShell", Tex.Leather, new Color(0.66f, 0.42f, 0.2f), 0.62f, tiling: new Vector2(1f, 2f), bump: 0.5f);
+                    var cap = Mats.Lit("AcornCap", Tex.Bark, new Color(0.62f, 0.5f, 0.34f), 0.15f, tiling: new Vector2(3f, 1.5f), bump: 2.2f);
+                    var dark = Mats.Plain(new Color(0.2f, 0.13f, 0.07f), 0.4f);
+                    var o = new Vector3(0f, -0.22f, 0f);
+                    Prim.Shape(acornNut, "Nut", v, o, Vector3.one, shell);
+                    Prim.Shape(acornCap, "Cap", v, o + new Vector3(0f, 0.27f, 0f), Vector3.one, cap);
+                    Prim.Shape(ballMesh, "Tip", v, o + new Vector3(0f, 0.005f, 0f), Vector3.one * 0.035f, dark, null, false);
+                    Prim.Shape(acornStem, "Stem", v, o + new Vector3(0f, 0.48f, 0f), Vector3.one, dark, new Vector3(0f, 0f, 12f), false);
+                    Prim.Shape(ballMesh, "Frost", v, o + new Vector3(0.02f, 0.415f, -0.01f), new Vector3(0.2f, 0.035f, 0.18f), Mats.Snow, null, false);
+                    p.tilt = 14f; p.wobble = 7f; p.spinRate = 110f;
+                    break;
+                }
+
+                case Currency.GoldCoin:
+                {
+                    // Pirate doubloon: raised rim and a cross stamped on both faces, standing on edge.
+                    var gold = Mats.Gold;
+                    Prim.Shape(coinMesh, "Coin", v, new Vector3(0f, 0f, -0.03f), Vector3.one, gold, new Vector3(90f, 0f, 0f));
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        float z = side * 0.026f;
+                        Prim.Shape(barMesh, "CrossV", v, new Vector3(0f, 0f, z), new Vector3(0.05f, 0.24f, 0.014f), gold, null, false);
+                        Prim.Shape(barMesh, "CrossH", v, new Vector3(0f, 0.03f, z), new Vector3(0.18f, 0.05f, 0.014f), gold, null, false);
+                        Prim.Shape(ballMesh, "Stud", v, new Vector3(0f, 0.03f, z), new Vector3(0.07f, 0.07f, 0.03f), gold, null, false);
+                    }
+                    p.tilt = 0f; p.wobble = 4f; p.spinRate = 220f;
+                    break;
+                }
+
+                case Currency.SoulOrb:
+                {
+                    // A glowing spirit orb with a bright core and wisps circling it (they orbit as it spins).
+                    var shell = Mats.Emissive("SoulShell", Tex.Metal, new Color(0.3f, 0.8f, 0.55f), 0.95f, new Color(0.25f, 1.1f, 0.6f));
+                    var core = Mats.Emissive("SoulCore", Tex.Metal, new Color(0.9f, 1f, 0.95f), 0.95f, new Color(1.6f, 2.6f, 1.8f));
+                    Prim.Shape(ballMesh, "Orb", v, Vector3.zero, Vector3.one * 0.34f, shell);
+                    Prim.Shape(ballMesh, "Core", v, new Vector3(0f, 0.02f, -0.12f), Vector3.one * 0.14f, core, null, false);
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float a = i * 120f * Mathf.Deg2Rad;
+                        for (int k = 0; k < 3; k++)
+                        {
+                            float aa = a - k * 0.35f;
+                            Prim.Shape(ballMesh, "Wisp", v, new Vector3(Mathf.Cos(aa) * 0.3f, 0.06f * Mathf.Sin(aa * 2f) + k * 0.04f, Mathf.Sin(aa) * 0.3f),
+                                       Vector3.one * (0.075f - k * 0.018f), shell, null, false);
+                        }
+                    }
+                    p.tilt = 0f; p.wobble = 10f; p.spinRate = 260f;
+                    break;
+                }
+            }
+        }
+
         // ---------------- Shared meshes & materials ----------------
 
+        static Mesh acornNut, acornCap, acornStem, coinMesh, barMesh;
+        static readonly Dictionary<Color, Material> haloByColor = new Dictionary<Color, Material>();
         static Mesh bananaMesh, stalkMesh, shadowMesh, ballMesh, ringMesh, smallLeaf, gliderLeaf, idolMesh, haloMesh;
         static Vector3 bananaTip, stalkEnd;
-        static readonly Material[] haloMats = new Material[5];
         static Material shadowMat;
 
         static Material StalkMat => Mats.Lit("BananaStalk", Tex.Bark, new Color(0.55f, 0.58f, 0.3f), 0.25f, tiling: new Vector2(1f, 1f));
@@ -248,6 +356,23 @@ namespace JungleEscape
             stalkMesh = Meshes.Sweep(stalk, (t, ang) => Mathf.Lerp(0.024f, 0.021f, t), 8, 1f, 4f, true);
             stalkEnd = stalk[2];
             shadowMesh = Meshes.Disc(16);
+            acornNut = Meshes.Lathe(new[]
+            {
+                new Vector2(0.001f, 0f), new Vector2(0.03f, 0.02f), new Vector2(0.09f, 0.08f), new Vector2(0.135f, 0.17f),
+                new Vector2(0.15f, 0.26f), new Vector2(0.14f, 0.33f), new Vector2(0.001f, 0.35f)
+            }, 18, 1f, "AcornNut");
+            acornCap = Meshes.Lathe(new[]
+            {
+                new Vector2(0.135f, -0.01f), new Vector2(0.165f, 0.015f), new Vector2(0.172f, 0.06f), new Vector2(0.155f, 0.11f),
+                new Vector2(0.1f, 0.145f), new Vector2(0.001f, 0.155f)
+            }, 18, 3f, "AcornCap");
+            acornStem = Meshes.Limb(0.07f, 0.018f, 0.014f, 6, 2);
+            coinMesh = Meshes.Lathe(new[]
+            {
+                new Vector2(0.001f, 0f), new Vector2(0.2f, 0.004f), new Vector2(0.235f, 0f), new Vector2(0.27f, 0.006f), new Vector2(0.28f, 0.03f),
+                new Vector2(0.27f, 0.054f), new Vector2(0.235f, 0.06f), new Vector2(0.2f, 0.056f), new Vector2(0.001f, 0.06f)
+            }, 28, 1f, "Coin");
+            barMesh = Meshes.RoundedBox(Vector3.one, 0.2f, 2);
 
             ballMesh = Meshes.Ball(12, 18);
 
@@ -273,15 +398,13 @@ namespace JungleEscape
             haloMesh = Meshes.Billboard(1f, 1f);
         }
 
-        static Material HaloMat(PickupType t)
+        static Material HaloMat(Color glow, float alpha)
         {
-            int i = (int)t;
-            if (haloMats[i] != null) return haloMats[i];
-            var m = new Material(Mats.ParticleAdd(Tex.Glow)) { name = "Halo" + t };
-            Color c = GlowColor(t);
-            c.a = t == PickupType.Banana ? 0.22f : 0.4f;
-            m.SetColor("_BaseColor", c);
-            return haloMats[i] = m;
+            glow.a = alpha;
+            if (haloByColor.TryGetValue(glow, out var m) && m != null) return m;
+            m = new Material(Mats.ParticleAdd(Tex.Glow)) { name = "Halo" };
+            m.SetColor("_BaseColor", glow);
+            return haloByColor[glow] = m;
         }
 
         static Color GlowColor(PickupType t)
