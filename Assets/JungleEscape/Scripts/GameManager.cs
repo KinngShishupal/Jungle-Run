@@ -118,6 +118,7 @@ namespace JungleEscape
             Track.ResetTrack();
             Monkeys.BeginChase();
             State = GameState.Playing;
+            AudioDirector.Play("click");
         }
 
         /// <summary>Starts a fresh run directly in a world (for testing a world on its own).</summary>
@@ -147,6 +148,7 @@ namespace JungleEscape
         public void Pause()
         {
             if (State != GameState.Playing) return;
+            AudioDirector.Play("click");
             State = GameState.Paused;
             Time.timeScale = 0f;
         }
@@ -176,11 +178,19 @@ namespace JungleEscape
                 Streak++;
                 lastBananaTime = Time.time;
                 Score += 10 * Multiplier;
+                // Every money pickup gives the coin-collect "cha-ching", layered with that world's own sound
+                // (banana pop, acorn knock, gold clink, glass ting). The pitch climbs as a streak builds.
+                float streakPitch = 1f + Mathf.Min(Streak, 16) * 0.025f;
+                string snd = p.Kind == Pickup.Currency.Acorn ? "pickup_acorn" : p.Kind == Pickup.Currency.GoldCoin ? "pickup_coin"
+                           : p.Kind == Pickup.Currency.WaterGlass ? "pickup_water" : "pickup_banana";
+                AudioDirector.Play("coin_collect", amount > 1 ? 0.6f : 0.45f, streakPitch);
+                AudioDirector.Play(snd, 0.35f, streakPitch);
             }
             else
             {
                 Player.Activate(p.Type);
                 Score += 50 * Multiplier;
+                AudioDirector.Play("powerup", 0.8f);
             }
         }
 
@@ -191,6 +201,7 @@ namespace JungleEscape
             Score += 500 * Multiplier;
             Cam.Shake(0.15f, 0.25f);
             GameUI.Announce(Biomes.Title(world), Biomes.PortalColor(world));
+            AudioDirector.Play("world", 0.8f);
         }
 
         /// <summary>Side bump: first one wakes the monkeys, a second one soon after = caught.</summary>
@@ -199,6 +210,7 @@ namespace JungleEscape
             if (State != GameState.Playing) return;
             Streak = 0;
             Cam.Shake(0.25f, 0.2f);
+            AudioDirector.Play("stumble", 0.9f);
             Vibrate();
 
             if (Monkeys.IsClose)
@@ -209,6 +221,7 @@ namespace JungleEscape
             else
             {
                 Monkeys.Approach();
+                AudioDirector.Play("monkey_chatter", 0.7f);
             }
         }
 
@@ -216,6 +229,8 @@ namespace JungleEscape
         {
             if (State != GameState.Playing) return;
             Cam.Shake(0.45f, 0.35f);
+            AudioDirector.Play("crash", 1f);
+            AudioDirector.Play("monkey_shriek", 0.6f);
             Vibrate();
             Monkeys.Catch();
             EndRun(Creatures.CrashLine(ob.Creature) ?? CrashMessage(ob.Type));
@@ -267,6 +282,7 @@ namespace JungleEscape
             Player.Revive();
             Monkeys.FallBack();
             State = GameState.Playing;
+            AudioDirector.Play("powerup", 0.8f);
         }
 
         void Save()

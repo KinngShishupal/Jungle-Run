@@ -42,6 +42,8 @@ namespace JungleEscape
             var gm = gameObject.AddComponent<GameManager>();
             var track = gameObject.AddComponent<TrackGenerator>();
             gameObject.AddComponent<GameUI>();
+            gameObject.AddComponent<AudioDirector>();
+            if (cam.GetComponent<AudioListener>() == null && Object.FindAnyObjectByType<AudioListener>() == null) cam.gameObject.AddComponent<AudioListener>();
 
             // Player
             var player = new GameObject("Player").AddComponent<PlayerController>();

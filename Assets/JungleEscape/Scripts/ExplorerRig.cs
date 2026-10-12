@@ -52,6 +52,17 @@ namespace JungleEscape
         public static readonly Vector3 GripPoint = new Vector3(0f, 1.95f, 0.1f);
 
         Transform body, pelvis, spine, neck, thighL, thighR, kneeL, kneeR, ankleL, ankleR, shoulderL, shoulderR, elbowL, elbowR;
+
+        // Joints, for driving an imported character model from these poses (see ModelRetarget)
+        public Transform BodyT => body;
+        public Transform PelvisT => pelvis;
+        public Transform SpineT => spine;
+        public Transform NeckT => neck;
+        public Transform ThighL => thighL; public Transform ThighR => thighR;
+        public Transform KneeL => kneeL; public Transform KneeR => kneeR;
+        public Transform AnkleL => ankleL; public Transform AnkleR => ankleR;
+        public Transform ShoulderL => shoulderL; public Transform ShoulderR => shoulderR;
+        public Transform ElbowL => elbowL; public Transform ElbowR => elbowR;
         Transform frontFlap, backFlap, shadow;
         Pose cur;
         Material shadowMat;

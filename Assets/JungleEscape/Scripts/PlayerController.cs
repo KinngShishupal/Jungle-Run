@@ -81,6 +81,7 @@ namespace JungleEscape
         BoxCollider box;
         ExplorerRig rig;
         HumanoidCharacter human;              // skinned mocap character, when one has been added
+        ModelRetarget model;                  // imported jungle-boy model driven by the procedural rig
         readonly float[] humanWeights = new float[7];
         float bankNow, yawNow;
 
@@ -102,6 +103,12 @@ namespace JungleEscape
             rig.Build(transform);
             human = HumanoidCharacter.TryCreate(transform);
             if (human != null) rig.HideBody();
+            else
+            {
+                // No mocap clips: use the imported jungle-boy model, posed from the procedural animation.
+                model = ModelRetarget.TryCreate(transform, rig);
+                if (model != null) rig.HideBody();
+            }
             SetCollider(false);
             UpdateFx();
         }
@@ -198,11 +205,13 @@ namespace JungleEscape
             jumpBufferTimer = 0f;
             landTimer = 0f;
             Fx.Dust(Feet(-0.1f), 3, 0.5f); // push-off
+            AudioDirector.Play("jump", 0.55f, Random.Range(0.95f, 1.08f));
         }
 
         void StartRoll()
         {
             rollTimer = RollDuration;
+            AudioDirector.Play("roll", 0.6f, Random.Range(0.95f, 1.05f));
             landTimer = 0f;
         }
 
@@ -218,6 +227,7 @@ namespace JungleEscape
             landTimer = LandDuration;
             var feet = Feet(0f);
             Fx.Dust(feet, 4 + Mathf.RoundToInt(8f * landStrength), 0.55f + 0.45f * landStrength);
+            AudioDirector.Play("land", 0.35f + 0.5f * landStrength, Random.Range(0.92f, 1.05f));
             if (slammed) gm.Cam.Shake(0.12f, 0.1f);
             else if (impactSpeed > 9f) gm.Cam.Shake(0.05f, 0.07f);
 
@@ -354,6 +364,7 @@ namespace JungleEscape
             {
                 power[(int)PickupType.Shield] = 0f;
                 ob.Smash();
+                AudioDirector.Play("shield", 0.9f);
                 gm.Cam.Shake(0.2f, 0.15f);
                 stumbleTimer = StumbleDuration * 0.6f;
                 invuln = 0.5f;
@@ -374,6 +385,7 @@ namespace JungleEscape
                 rollTimer = 0f; fastFalling = false; rollOnLand = false;
                 // Leap up into the wind as the leaf opens
                 if (grounded) { vy = Mathf.Max(vy, 4f); Fx.Dust(Feet(0f), 4, 0.6f); }
+                AudioDirector.Play("glide_open", 0.8f);
                 glideTime = 0f; glideInputT = 0f; glideOffset = 0f; glideFlare = 0f;
                 swing = swingVel = swingPitch = swingPitchVel = 0f; prevXVel = xVel; prevVy = vy;
             }
@@ -396,6 +408,7 @@ namespace JungleEscape
             TrackPath.Place(transform, 0f, 0f, 0f);
             SetCollider(false);
             rig.Root.gameObject.SetActive(true);
+            model?.SetVisible(true);
             rig.Snap(ExplorerRig.Idle(animTime));
             human?.SnapTo(HumanoidCharacter.Clip.Idle);
             rig.GroundShadow(0f);
@@ -410,6 +423,7 @@ namespace JungleEscape
             human?.Restart(HumanoidCharacter.Clip.Fall);
             rollTimer = 0f;
             rig.Root.gameObject.SetActive(true);
+            model?.SetVisible(true);
         }
 
         public void Revive()
@@ -526,6 +540,7 @@ namespace JungleEscape
             bool visible = invuln <= 0f || Mathf.Repeat(animTime, 0.2f) < 0.12f;
             rig.Root.gameObject.SetActive(visible);
             human?.SetVisible(visible);
+            model?.SetVisible(visible);
 
             UpdateFx();
             rig.MagnetFx.Rotate(0f, 360f * dt, 0f, Space.Self);
@@ -542,6 +557,7 @@ namespace JungleEscape
             lastStep = step;
             float side = (step & 1) == 0 ? -0.1f : 0.1f;
             Fx.Dust(TrackPath.Point(s + 0.15f, x + side, 0f), 2, 0.42f);
+            AudioDirector.Footstep(0.45f);
         }
 
         void IdleUpdate(float dt)

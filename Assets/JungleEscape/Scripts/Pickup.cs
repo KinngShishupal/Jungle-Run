@@ -24,6 +24,7 @@ namespace JungleEscape
         float phase, wave, spin, tilt = 18f, wobble = 8f, spinRate = 140f;
         Color glow;
         Currency kind;
+        public Currency Kind => kind;
         // Water glass: the water surface sloshes on a spring
         Transform waterTop;
         Vector2 slosh, sloshV;

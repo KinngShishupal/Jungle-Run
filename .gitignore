@@ -42,3 +42,6 @@ sysinfo.txt
 # OS files
 .DS_Store
 Thumbs.db
+
+# Rendered audio previews (generated at runtime in the game)
+AudioPreview/

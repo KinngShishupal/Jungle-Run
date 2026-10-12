@@ -125,6 +125,7 @@ namespace JungleEscape
             Shadow(new Rect(stats.x, stats.y + 98, stats.width, 70), $"Treasure   {gm.TotalBananas:N0}", mid, Gold);
 
             if (GUI.Button(new Rect(w / 2 - 300, h * 0.60f, 600, 170), "RUN", button)) gm.StartRun();
+            SoundToggle(w);
 
             // Developer world picker (editor & development builds only): choose the world a run starts in.
             if (Debug.isDebugBuild) DrawWorldPicker(gm, w, h * 0.60f + 195f);
@@ -184,6 +185,17 @@ namespace JungleEscape
             return y + 102;
         }
 
+        /// <summary>Sound on/off switch in the top-right corner (remembered between sessions).</summary>
+        void SoundToggle(float w)
+        {
+            bool on = AudioDirector.SoundOn;
+            if (GUI.Button(new Rect(w - 300, 40, 260, 100), on ? "Sound: On" : "Sound: Off", smallButton))
+            {
+                AudioDirector.SoundOn = !on;
+                AudioDirector.Play("click");
+            }
+        }
+
         void DrawPause(GameManager gm, float w, float h)
         {
             GUI.DrawTexture(new Rect(0, 0, w, h), dimTex);
@@ -191,6 +203,7 @@ namespace JungleEscape
             Ornament(w / 2, h * 0.27f + 160, 260);
             if (GUI.Button(new Rect(w / 2 - 300, h * 0.45f, 600, 150), "Resume", button)) gm.Resume();
             if (GUI.Button(new Rect(w / 2 - 300, h * 0.45f + 190, 600, 150), "Home", button)) gm.GoToMenu();
+            SoundToggle(w);
         }
 
         void DrawGameOver(GameManager gm, float w, float h)

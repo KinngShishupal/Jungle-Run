@@ -34,7 +34,7 @@ namespace JungleEscape
         public bool Native => Creature != Creature.None && Creature != Creature.Python && Creature != Creature.Boar
                               && Creature != Creature.Tiger && Creature != Creature.Bear;
 
-        bool charging;
+        bool charging, cried;
         Transform body;
         Transform[] legs;
         float phase, speedNow;
@@ -46,6 +46,18 @@ namespace JungleEscape
         void Update()
         {
             if (Handled) return;
+
+            // Animals call out once as the runner closes in (chargers as they start their charge).
+            if (!cried && Creature != Creature.None)
+            {
+                var g = GameManager.I;
+                if (g != null && g.State == GameState.Playing)
+                {
+                    float gp = S - g.Player.TrackS;
+                    float range = Charges ? (Type == ObstacleType.Tiger ? WakeDistance * 0.8f : WakeDistance) : 26f;
+                    if (gp > 0f && gp < range) { cried = true; Cry(); }
+                }
+            }
 
             if (!Charges) return;
             if (!quadChecked) { quad = GetComponent<GaitRig>(); quadChecked = true; }
@@ -89,6 +101,31 @@ namespace JungleEscape
             }
             body.localPosition = new Vector3(0f, Mathf.Abs(Mathf.Sin(t)) * (Type == ObstacleType.Tiger ? 0.14f : 0.08f), 0f);
             body.localRotation = Quaternion.Euler(Mathf.Sin(t * 2f) * 3f, 0f, 0f);
+        }
+
+        /// <summary>The creature's call, played from where it stands.</summary>
+        void Cry()
+        {
+            string key; float pitch = 1f, vol = 1f;
+            switch (Creature)
+            {
+                case Creature.Tiger: key = "roar"; break;
+                case Creature.Sabertooth: key = "roar"; pitch = 0.85f; break;
+                case Creature.Lion: key = "roar"; pitch = 0.92f; break;
+                case Creature.Bear: key = "roar"; pitch = 0.7f; break;
+                case Creature.Mammoth: key = "trumpet"; pitch = 0.8f; break;
+                case Creature.Camel: key = "groan"; break;
+                case Creature.Boar: key = "grunt"; pitch = 1.25f; break;
+                case Creature.WoollyRhino: key = "grunt"; pitch = 0.85f; break;
+                case Creature.Hippo: key = "grunt"; pitch = 0.7f; vol = 1.1f; break;
+                case Creature.Python: key = "hiss"; break;
+                case Creature.Crocodile: key = "hiss"; pitch = 0.6f; break;
+                case Creature.Crab: case Creature.Scorpion: key = "clicks"; break;
+                case Creature.Ostrich: key = "boom"; break;
+                case Creature.Octopus: key = "bubbles"; pitch = 0.8f; break;
+                default: return;
+            }
+            AudioDirector.PlayAt(key, transform.position + Vector3.up, vol, pitch * Random.Range(0.94f, 1.06f));
         }
 
         void TigerCrouch()
