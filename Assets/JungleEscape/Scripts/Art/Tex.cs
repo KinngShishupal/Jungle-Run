@@ -382,7 +382,11 @@ namespace JungleEscape
             c = Color.Lerp(c, C(0.72f, 0.64f, 0.42f), rim * 0.8f);
             c = Color.Lerp(c, C(0.20f, 0.14f, 0.08f) * (0.8f + 0.4f * id), blotch);
             c *= 0.8f + 0.2f * scale;
-            h = scale * 0.6f + blotch * 0.2f;
+            // U wraps around the body with the belly at u = 0.75: cream ventral scutes there.
+            float belly = SS(0.13f, 0.07f, Mathf.Abs(u - 0.75f));
+            float scute = Mathf.Abs(Mathf.Sin(v * 12f * Mathf.PI));
+            c = Color.Lerp(c, C(0.80f, 0.74f, 0.56f) * (0.82f + 0.18f * scute), belly);
+            h = Mathf.Lerp(scale * 0.6f + blotch * 0.2f, scute * 0.5f, belly);
         }
 
         static void PaintTigerFur(float u, float v, out Color c, out float h)
