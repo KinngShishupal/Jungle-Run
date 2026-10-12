@@ -197,6 +197,15 @@ namespace JungleEscape
                     else Animals.BuildBear(t);
                     break;
             }
+            // The runner can steer right up to the trail edges, so obstacles in the outer lanes reach out
+            // toward the edge as well: hugging the edge never sneaks past them. (Moving crawlers and the
+            // python reposition their colliders as they go; the wider size still covers the edge.)
+            if (lane != 0)
+            {
+                const float reach = 1.0f;
+                col.center = new Vector3(col.center.x + lane * reach * 0.5f, col.center.y, col.center.z);
+                col.size = new Vector3(col.size.x + reach, col.size.y, col.size.z);
+            }
             return ob;
         }
 

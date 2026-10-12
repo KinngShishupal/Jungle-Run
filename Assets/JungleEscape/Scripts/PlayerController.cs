@@ -15,7 +15,11 @@ namespace JungleEscape
         public const float LaneWidth = 2.5f;
 
         // Lateral
-        const float LaneSmoothTime = 0.075f;  // spring-damper settle time for a lane change
+        const float LaneSmoothTime = 0.075f;  // spring-damper settle time toward the steering target
+        /// <summary>How far either side of the trail centre the runner can go (the trail is 10 m wide).</summary>
+        public const float MaxX = 3.9f;
+        const float KeyHoldDelay = 0.22f;     // hold an arrow key this long to keep moving
+        const float KeyHoldSpeed = 7.5f;      // m/s while an arrow key is held
         const float MaxLateralSpeed = 24f;
 
         // Vertical (apex ~1.6 m, air time ~0.68 s: clears logs with room to spare)
@@ -41,9 +45,11 @@ namespace JungleEscape
         // Power-up durations in seconds, indexed by PickupType.
         static readonly float[] Durations = { 0f, 10f, 7f, 20f, 12f };
 
-        public int Lane { get; private set; }
+        /// <summary>The lane (-1, 0, 1) nearest the runner. Movement itself is free across the whole trail.</summary>
+        public int Lane => Mathf.Clamp(Mathf.RoundToInt(x / LaneWidth), -1, 1);
 
-        int prevLane;
+        float targetX;   // where the runner is steering to (track-space x)
+        float keyHoldT;
         float x, xVel, y, vy, s;
 
         /// <summary>Distance along the trail (track space).</summary>
@@ -112,10 +118,11 @@ namespace JungleEscape
             if (gm.State != GameState.Playing) return;
 
             HandleInput(InputBridge.Read(), gm);
+            Steer(dt, gm);
             TickTimers(dt);
 
-            // ---- Lateral: critically damped spring toward the lane centre ----
-            x = Mathf.SmoothDamp(x, Lane * LaneWidth, ref xVel, LaneSmoothTime, MaxLateralSpeed, dt);
+            // ---- Lateral: critically damped spring toward the steering target ----
+            x = Mathf.SmoothDamp(x, targetX, ref xVel, LaneSmoothTime, MaxLateralSpeed, dt);
 
             // ---- Vertical ----
             if (IsGliding)
@@ -161,8 +168,8 @@ namespace JungleEscape
         {
             switch (s)
             {
-                case SwipeDir.Left: ChangeLane(-1, gm); break;
-                case SwipeDir.Right: ChangeLane(1, gm); break;
+                case SwipeDir.Left: Step(-1, gm); break;
+                case SwipeDir.Right: Step(1, gm); break;
                 case SwipeDir.Up:
                     if (IsGliding) { glideInput = 1.3f; glideInputT = 1.1f; break; }   // pull up
                     if (grounded) Jump();
@@ -218,18 +225,42 @@ namespace JungleEscape
             else if (jumpBufferTimer > 0f) Jump();
         }
 
-        void ChangeLane(int dir, GameManager gm)
+        /// <summary>A keyboard tap: one lane-width step sideways (a little shove back if already at the edge).</summary>
+        void Step(int dir, GameManager gm)
         {
-            int target = Mathf.Clamp(Lane + dir, -1, 1);
-            if (target == Lane)
+            if (Mathf.Abs(targetX - dir * MaxX) < 0.05f)
             {
                 // Bumped the jungle edge: a little shove back and a shake.
                 xVel -= dir * 3f;
                 gm.Cam.Shake(0.08f, 0.1f);
                 return;
             }
-            prevLane = Lane;
-            Lane = target;
+            targetX = Mathf.Clamp(targetX + dir * LaneWidth, -MaxX, MaxX);
+            keyHoldT = 0f;
+        }
+
+        /// <summary>
+        /// Free sideways steering: a sideways drag moves the target by a matching distance; holding an arrow
+        /// key keeps moving after a short delay. The runner can go anywhere between the trail edges.
+        /// </summary>
+        void Steer(float dt, GameManager gm)
+        {
+            float drag = InputBridge.SteerDelta;
+            if (drag != 0f)
+            {
+                float wanted = targetX + drag;
+                if (Mathf.Abs(wanted) > MaxX && Mathf.Abs(targetX) >= MaxX - 0.01f && Mathf.Abs(drag) > 0.15f)
+                    gm.Cam.Shake(0.05f, 0.06f); // pushing against the edge
+                targetX = Mathf.Clamp(wanted, -MaxX, MaxX);
+            }
+
+            float hold = InputBridge.SteerHold;
+            if (hold != 0f)
+            {
+                keyHoldT += dt;
+                if (keyHoldT > KeyHoldDelay) targetX = Mathf.Clamp(targetX + hold * KeyHoldSpeed * dt, -MaxX, MaxX);
+            }
+            else keyHoldT = 0f;
         }
 
         /// <summary>
@@ -305,11 +336,12 @@ namespace JungleEscape
             if (ob == null || ob.Handled) return;
             if (IsGliding || invuln > 0f) return;
 
-            // Hit the side of an obstacle while switching lanes -> stumble and bounce back.
-            bool switching = Mathf.Abs(x - Lane * LaneWidth) > 0.35f;
-            if (switching && ob.Lane == Lane)
+            // Ran into the side of an obstacle while moving sideways -> stumble and bounce back off it.
+            float offset = ob.Lane * LaneWidth - x;
+            bool fromSide = Mathf.Abs(xVel) > 1.5f && Mathf.Abs(offset) > 0.9f && Mathf.Sign(offset) == Mathf.Sign(xVel);
+            if (fromSide)
             {
-                Lane = prevLane;
+                targetX = Mathf.Clamp(x - Mathf.Sign(xVel) * 0.9f, -MaxX, MaxX);
                 xVel = -xVel * 0.5f; // rebound off the obstacle
                 stumbleTimer = StumbleDuration;
                 human?.Restart(HumanoidCharacter.Clip.Stumble);
@@ -349,7 +381,7 @@ namespace JungleEscape
 
         public void ResetPlayer()
         {
-            Lane = prevLane = 0;
+            targetX = 0f; keyHoldT = 0f;
             x = xVel = y = vy = 0f;
             grounded = true;
             fastFalling = false;

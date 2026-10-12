@@ -8,19 +8,33 @@ namespace JungleEscape
     public enum SwipeDir { None, Left, Right, Up, Down }
 
     /// <summary>
-    /// Reads swipes (touch or mouse drag) and keyboard arrows/WASD.
-    /// Works with both the new Input System and the old Input Manager.
-    /// Call Read() once per frame.
+    /// Reads touch / mouse drags and keyboard arrows/WASD.
+    /// Horizontal input is continuous steering: dragging sideways moves the runner sideways by a matching
+    /// distance (a quarter-screen drag is about one lane), so it can go anywhere across the trail.
+    /// Vertical swipes jump and roll. Keyboard: tap left/right for a lane-sized step, hold to keep moving.
+    /// Works with both the new Input System and the old Input Manager. Call Read() once per frame.
     /// </summary>
     public static class InputBridge
     {
-        static bool tracking;
-        static Vector2 startPos;
+        /// <summary>Metres of sideways movement per full screen-width drag.</summary>
+        const float SteerGain = 10f;
+
+        static bool tracking, steering;
+        static Vector2 startPos, lastPos;
+
+        /// <summary>Sideways movement requested by dragging this frame, in metres (+ = right).</summary>
+        public static float SteerDelta { get; private set; }
+
+        /// <summary>Keyboard left/right held: -1, 0 or +1.</summary>
+        public static float SteerHold { get; private set; }
 
         static float Threshold => Mathf.Max(30f, Mathf.Min(Screen.width, Screen.height) * 0.06f);
+        static float SteerThreshold => Mathf.Max(10f, Mathf.Min(Screen.width, Screen.height) * 0.02f);
 
         public static SwipeDir Read()
         {
+            SteerDelta = 0f;
+            SteerHold = ReadHold();
             SwipeDir key = ReadKeys();
             if (key != SwipeDir.None) return key;
 
@@ -29,27 +43,58 @@ namespace JungleEscape
             if (down)
             {
                 tracking = true;
-                startPos = pos;
+                steering = false;
+                startPos = lastPos = pos;
                 return SwipeDir.None;
             }
 
             if (tracking && held)
             {
                 Vector2 delta = pos - startPos;
-                if (delta.magnitude >= Threshold)
+                if (steering)
                 {
-                    tracking = false; // one swipe per touch, fires as soon as it's clear
-                    if (Mathf.Abs(delta.x) > Mathf.Abs(delta.y))
-                        return delta.x > 0 ? SwipeDir.Right : SwipeDir.Left;
+                    // Follow the finger: sideways movement in proportion to the drag.
+                    SteerDelta = (pos.x - lastPos.x) / Mathf.Max(1f, Screen.width) * SteerGain;
+                    lastPos = pos;
+                    // A clear upward/downward flick mid-drag still jumps or rolls.
+                    Vector2 recent = pos - startPos;
+                    if (Mathf.Abs(recent.y) >= Threshold * 1.4f && Mathf.Abs(recent.y) > Mathf.Abs(recent.x) * 1.5f)
+                    {
+                        tracking = false;
+                        return recent.y > 0 ? SwipeDir.Up : SwipeDir.Down;
+                    }
+                    return SwipeDir.None;
+                }
+                if (Mathf.Abs(delta.x) >= SteerThreshold && Mathf.Abs(delta.x) > Mathf.Abs(delta.y) * 1.2f)
+                {
+                    // Sideways drag: start steering, applying the distance already dragged.
+                    steering = true;
+                    SteerDelta = delta.x / Mathf.Max(1f, Screen.width) * SteerGain;
+                    startPos = lastPos = pos;
+                    return SwipeDir.None;
+                }
+                if (Mathf.Abs(delta.y) >= Threshold && Mathf.Abs(delta.y) > Mathf.Abs(delta.x))
+                {
+                    tracking = false; // one vertical swipe per touch, fires as soon as it's clear
                     return delta.y > 0 ? SwipeDir.Up : SwipeDir.Down;
                 }
             }
 
-            if (!held) tracking = false;
+            if (!held) { tracking = false; steering = false; }
             return SwipeDir.None;
         }
 
 #if ENABLE_INPUT_SYSTEM
+        static float ReadHold()
+        {
+            var kb = Keyboard.current;
+            if (kb == null) return 0f;
+            float h = 0f;
+            if (kb.leftArrowKey.isPressed || kb.aKey.isPressed) h -= 1f;
+            if (kb.rightArrowKey.isPressed || kb.dKey.isPressed) h += 1f;
+            return h;
+        }
+
         static SwipeDir ReadKeys()
         {
             var kb = Keyboard.current;
@@ -76,6 +121,14 @@ namespace JungleEscape
             return kb != null && kb.escapeKey.wasPressedThisFrame;
         }
 #else
+        static float ReadHold()
+        {
+            float h = 0f;
+            if (Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.A)) h -= 1f;
+            if (Input.GetKey(KeyCode.RightArrow) || Input.GetKey(KeyCode.D)) h += 1f;
+            return h;
+        }
+
         static SwipeDir ReadKeys()
         {
             if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A)) return SwipeDir.Left;
