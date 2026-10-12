@@ -111,7 +111,7 @@ namespace JungleEscape.EditorTools
                 {
                     RigShot(ExplorerRig.Air(6f), 0f, side), RigShot(ExplorerRig.Air(-6f), 0f, side),
                     RigShot(t, 0f, side), RigShot(t, 140f, side),
-                    RigShot(ExplorerRig.Glide(0f), 0f, side), RigShot(ExplorerRig.Knocked(), 0f, side, -86f)
+                    RigShot(ExplorerRig.Glide(0f, 0f, 0f, 0f), 0f, side), RigShot(ExplorerRig.Knocked(), 0f, side, -86f)
                 }, 3);
 
                 EditorUtility.DisplayProgressBar("Asset Gallery", "Textures", 0.9f);

@@ -30,6 +30,7 @@ namespace JungleEscape
 
         const float RollDuration = 0.75f;
         const float GlideHeight = 5f;
+        const float HangLength = 1.35f;       // grip to the body's centre of mass (pendulum length)
         const float InvulnAfterRevive = 2f;
         const float StandHeight = 1.8f;
         const float RollHeight = 0.8f;
@@ -66,6 +67,9 @@ namespace JungleEscape
         int lastStep;
         float rollDustTimer;
         float wAir, wGlide;
+        // Leaf glider flight: time aloft, pilot input (climb/dive), and the hanging body as a 2-axis pendulum
+        float glideTime, glideInputT, glideInput, glideOffset;
+        float swing, swingVel, swingPitch, swingPitchVel, prevXVel, prevVy, glideLoad, glideFlare;
         readonly float[] power = new float[5];
 
         BoxCollider box;
@@ -116,11 +120,7 @@ namespace JungleEscape
             // ---- Vertical ----
             if (IsGliding)
             {
-                float targetY = GlideHeight;
-                float yv = vy;
-                y = Mathf.SmoothDamp(y, targetY, ref yv, 0.35f, 12f, dt);
-                vy = yv;
-                grounded = false;
+                GlideFlight(dt);
             }
             else if (!grounded)
             {
@@ -164,12 +164,12 @@ namespace JungleEscape
                 case SwipeDir.Left: ChangeLane(-1, gm); break;
                 case SwipeDir.Right: ChangeLane(1, gm); break;
                 case SwipeDir.Up:
-                    if (IsGliding) break;
+                    if (IsGliding) { glideInput = 1.3f; glideInputT = 1.1f; break; }   // pull up
                     if (grounded) Jump();
                     else jumpBufferTimer = JumpBuffer; // remember it and jump on touchdown
                     break;
                 case SwipeDir.Down:
-                    if (IsGliding) break;
+                    if (IsGliding) { glideInput = -3.4f; glideInputT = 1.1f; break; }  // dive
                     if (!grounded)
                     {
                         fastFalling = true;
@@ -232,10 +232,64 @@ namespace JungleEscape
             Lane = target;
         }
 
+        /// <summary>
+        /// Leaf glider flight. Altitude follows a target through a spring-damper (the leaf "catches" the air on
+        /// take-off, overshoots a little and settles), riding slow thermals and gusts. Swipe up to pull up,
+        /// swipe down to dive. In the last moments the lift fades and the glider sinks to a low, gentle
+        /// landing height. The hanging body is simulated as a pendulum under the grip, sideways and fore-aft.
+        /// </summary>
+        void GlideFlight(float dt)
+        {
+            glideTime += dt;
+            float remain = power[(int)PickupType.Glider];
+            glideFlare = Tex.SS(1.5f, 0.35f, remain);
+
+            if (glideInputT > 0f) glideInputT -= dt;
+            glideOffset = Mathf.MoveTowards(glideOffset, glideInputT > 0f ? glideInput : 0f, dt * 3.2f);
+            float thermal = 0.35f * Mathf.Sin(glideTime * 0.9f) + 0.5f * (Mathf.PerlinNoise(glideTime * 0.45f, 3.7f) - 0.5f);
+            float target = Mathf.Lerp(GlideHeight + thermal + glideOffset, 0.6f, glideFlare);
+
+            float acc = 9f * (target - y) - 3.4f * vy;   // damping ratio ~0.57: a small, natural overshoot
+            vy += acc * dt;
+            y += vy * dt;
+            if (y < 0f) { y = 0f; vy = Mathf.Max(vy, 0f); }
+            grounded = false;
+        }
+
+        /// <summary>The body hanging from the glider grip, as a damped pendulum driven by the glider's accelerations.</summary>
+        void SwingPendulum(float dt, bool gliding)
+        {
+            float g = 9.8f, L = HangLength;
+            float ax = dt > 0f ? (xVel - prevXVel) / dt : 0f;
+            float ay = dt > 0f ? (vy - prevVy) / dt : 0f;
+            prevXVel = xVel; prevVy = vy;
+            if (!gliding)
+            {
+                swing = Mathf.MoveTowards(swing, 0f, dt * 2f); swingVel = 0f;
+                swingPitch = Mathf.MoveTowards(swingPitch, 0f, dt * 2f); swingPitchVel = 0f;
+                return;
+            }
+            ax = Mathf.Clamp(ax, -40f, 40f);
+            ay = Mathf.Clamp(ay, -30f, 30f);
+            float turb = (Mathf.PerlinNoise(glideTime * 0.8f, 11.1f) - 0.5f);
+
+            // Sideways: lane changes accelerate the grip; the body lags, swings out and back, and settles.
+            float accS = -(g / L) * Mathf.Sin(swing) - 1.6f * swingVel - (ax / L) * Mathf.Cos(swing) + turb * 1.2f;
+            swingVel += accS * dt;
+            swing = Mathf.Clamp(swing + swingVel * dt, -0.9f, 0.9f);
+
+            // Fore-aft: surges of lift and the airflow push the legs back; it rocks gently.
+            float accP = -(g / L) * Mathf.Sin(swingPitch) - 1.4f * swingPitchVel + ay * 0.04f + 0.6f + turb * 0.8f;
+            swingPitchVel += accP * dt;
+            swingPitch = Mathf.Clamp(swingPitch + swingPitchVel * dt, -0.5f, 0.6f);
+
+            glideLoad = Mathf.Clamp(1f + ay * 0.08f + Mathf.Abs(ax) * 0.03f, 0.3f, 1.9f) * Mathf.Lerp(1f, 0.55f, glideFlare);
+        }
+
         void EndGlide()
         {
             grounded = false; // fall back down
-            vy = 0f;
+            vy = Mathf.Min(vy, 0f); // the glider has already sunk low: carry on down from there
             invuln = Mathf.Max(invuln, 0.6f);
         }
 
@@ -283,7 +337,14 @@ namespace JungleEscape
         public void Activate(PickupType t)
         {
             power[(int)t] = Durations[(int)t];
-            if (t == PickupType.Glider) { rollTimer = 0f; fastFalling = false; rollOnLand = false; }
+            if (t == PickupType.Glider)
+            {
+                rollTimer = 0f; fastFalling = false; rollOnLand = false;
+                // Leap up into the wind as the leaf opens
+                if (grounded) { vy = Mathf.Max(vy, 4f); Fx.Dust(Feet(0f), 4, 0.6f); }
+                glideTime = 0f; glideInputT = 0f; glideOffset = 0f; glideFlare = 0f;
+                swing = swingVel = swingPitch = swingPitchVel = 0f; prevXVel = xVel; prevVy = vy;
+            }
         }
 
         public void ResetPlayer()
@@ -379,7 +440,14 @@ namespace JungleEscape
             }
 
             if (wAir > 0f) pose = ExplorerRig.Pose.Lerp(pose, ExplorerRig.Air(vy), Mathf.SmoothStep(0f, 1f, wAir));
-            if (wGlide > 0f) pose = ExplorerRig.Pose.Lerp(pose, ExplorerRig.Glide(animTime), Mathf.SmoothStep(0f, 1f, wGlide));
+            SwingPendulum(dt, IsGliding);
+            float hang = Mathf.SmoothStep(0f, 1f, wGlide);
+            if (wGlide > 0f)
+            {
+                var glide = ExplorerRig.Glide(animTime, swingVel * Mathf.Rad2Deg, vy, glideFlare);
+                glide.Bank = swing * Mathf.Rad2Deg;   // the body hangs and swings beneath the grip
+                pose = ExplorerRig.Pose.Lerp(pose, glide, hang);
+            }
 
             // Absorb the landing: knees bend, body drops, then springs back up.
             if (grounded && !IsRolling && landTimer > 0f)
@@ -390,7 +458,7 @@ namespace JungleEscape
             }
 
             // Bank into lane changes and turn slightly toward where we're heading.
-            pose.Bank += Mathf.Clamp(-xVel * 1.3f, -20f, 20f);
+            pose.Bank += Mathf.Clamp(-xVel * 1.3f, -20f, 20f) * (1f - hang);
             pose.Yaw += Mathf.Clamp(xVel * 1.1f, -14f, 14f);
 
             // Stagger after a side bump or a shield hit.
@@ -407,7 +475,17 @@ namespace JungleEscape
 
             bankNow = pose.Bank;
             yawNow = pose.Yaw;
-            rig.Apply(pose, dt, rollAngle, 0f, sharp);
+            rig.Hang = hang;
+            rig.HangPitch = swingPitch * Mathf.Rad2Deg;
+            if (IsGliding)
+            {
+                // The wing leads into lane changes (rolling toward the new lane), pitches up on a climb and
+                // down in a dive, and flexes and flutters with the load and the gusts.
+                float wingBank = Mathf.Clamp(-xVel * 3.2f, -26f, 26f) + swing * Mathf.Rad2Deg * 0.25f;
+                float wingPitch = Mathf.Clamp(-vy * 4f, -16f, 14f) + swingPitch * Mathf.Rad2Deg * 0.15f - 10f * glideFlare;
+                rig.Glider.Drive(wingBank, wingPitch, glideLoad, Mathf.PerlinNoise(glideTime * 0.7f, 5.3f), dt);
+            }
+            rig.Apply(pose, dt, rollAngle, 0f, Mathf.Lerp(sharp, 45f, hang)); // follow the pendulum closely while hanging
             DriveHuman(dt, speedNorm);
             rig.Secondary(animTime, runPhase, runWeight, speedNorm);
             rig.GroundShadow(y);

@@ -42,6 +42,14 @@ namespace JungleEscape
         public Transform Root;
         public GameObject ShieldFx, GliderFx, BonanzaFx;
         public Transform MagnetFx;
+        public LeafGlider Glider;
+
+        /// <summary>0..1: how much the body hangs from the glider grip (pivots there instead of at the feet).</summary>
+        public float Hang;
+        /// <summary>Fore-aft swing of the hanging body, in degrees (positive = feet swing back).</summary>
+        public float HangPitch;
+        /// <summary>Where the hands hold the glider bar, in model space.</summary>
+        public static readonly Vector3 GripPoint = new Vector3(0f, 1.95f, 0.1f);
 
         Transform body, pelvis, spine, neck, thighL, thighR, kneeL, kneeR, ankleL, ankleR, shoulderL, shoulderR, elbowL, elbowR;
         Transform frontFlap, backFlap, shadow;
@@ -173,18 +181,37 @@ namespace JungleEscape
             };
         }
 
-        public static Pose Glide(float t)
+        /// <summary>
+        /// Hanging from the leaf glider's bar. Arms reach up to the grip (pulling in when climbing), the body
+        /// hangs below, and the legs dangle loosely: they trail behind the pendulum swing, drift independently,
+        /// tuck up on a climb, stretch back on a dive and reach down ahead of a landing.
+        /// </summary>
+        /// <param name="swingVel">Sideways swing speed of the body, deg/s (legs lag behind it).</param>
+        /// <param name="vy">Vertical speed, m/s.</param>
+        /// <param name="flare">0..1: preparing to land.</param>
+        public static Pose Glide(float t, float swingVel, float vy, float flare)
         {
-            float sway = Mathf.Sin(t * 2.2f);
+            float climb = Mathf.Clamp01(vy / 3f), dive = Mathf.Clamp01(-vy / 4f) * (1f - flare);
+            float driftL = Mathf.Sin(t * 1.7f), driftR = Mathf.Sin(t * 1.7f + 1.3f);
+            float lag = Mathf.Clamp(-swingVel * 0.12f, -18f, 18f);    // legs trail the swing
+            float tuck = climb * 30f, reach = flare;
+
+            float thigh = Mathf.Lerp(-8f, -32f, climb) + 18f * dive;
+            thigh = Mathf.Lerp(thigh, -24f, reach);
+            float knee = Mathf.Lerp(16f, 60f, climb) - 6f * dive;
+            knee = Mathf.Lerp(knee, 22f, reach);
+            float pull = 18f * climb;                                   // arms pull the bar in on a climb
             return new Pose
             {
-                ThighL = new Vector3(-12f + 10f * sway, 0f, -4f), KneeL = new Vector3(25f + 10f * sway, 0f, 0f),
-                ThighR = new Vector3(-12f - 10f * sway, 0f, 4f), KneeR = new Vector3(25f - 10f * sway, 0f, 0f),
-                AnkleL = new Vector3(38f, 0f, 0f), AnkleR = new Vector3(32f, 0f, 0f),
-                ShoulderL = new Vector3(-168f, 0f, -14f), ElbowL = new Vector3(-12f, 0f, 0f),
-                ShoulderR = new Vector3(-168f, 0f, 14f), ElbowR = new Vector3(-12f, 0f, 0f),
-                Spine = new Vector3(-4f, 0f, 0f), Neck = new Vector3(-12f, 0f, 0f),
-                BodyY = 0.05f * Mathf.Sin(t * 3f)
+                ThighL = new Vector3(thigh + 6f * driftL, 0f, -3f + lag), KneeL = new Vector3(knee + 8f * Mathf.Max(0f, driftL) + tuck * 0.3f, 0f, 0f),
+                ThighR = new Vector3(thigh + 6f * driftR - 4f, 0f, 3f + lag), KneeR = new Vector3(knee + 10f + 8f * Mathf.Max(0f, driftR), 0f, 0f),
+                AnkleL = new Vector3(Mathf.Lerp(32f, 8f, reach), 0f, 0f), AnkleR = new Vector3(Mathf.Lerp(26f, 6f, reach), 0f, 0f),
+                ShoulderL = new Vector3(-168f + pull, 0f, -14f), ElbowL = new Vector3(-22f - pull * 1.6f, 0f, 0f),
+                ShoulderR = new Vector3(-168f + pull, 0f, 14f), ElbowR = new Vector3(-22f - pull * 1.6f, 0f, 0f),
+                // Back gently arched, head up and looking ahead; the hips swing a little with the legs.
+                Spine = new Vector3(-6f + 8f * dive - 4f * climb, 0f, lag * 0.3f), Neck = new Vector3(4f - 8f * dive, 0f, 0f),
+                Pelvis = new Vector3(0f, 0f, lag * 0.4f),
+                BodyY = 0f
             };
         }
 
@@ -268,8 +295,11 @@ namespace JungleEscape
             }
             else
             {
-                body.localRotation = baseRot;
-                body.localPosition = offset;
+                // Hanging from the glider, the body swings like a pendulum about the hands, not the feet.
+                Quaternion rot = Quaternion.Euler(HangPitch * Hang, cur.Yaw, cur.Bank);
+                Vector3 pivot = GripPoint * Hang;
+                body.localRotation = rot;
+                body.localPosition = offset * (1f - Hang) + pivot - rot * pivot;
             }
         }
 
@@ -464,10 +494,11 @@ namespace JungleEscape
             // ---- Power-up effects ----
             ShieldFx = Prim.Shape(ball, "CoconutHelmet", head, new Vector3(0f, 0.11f, 0f), new Vector3(0.34f, 0.25f, 0.36f), Mats.Coconut);
 
-            GliderFx = Prim.Group("LeafGlider", body, new Vector3(0f, 2.3f, 0f)).gameObject;
-            Prim.Shape(Meshes.Leaf(2.4f, 1.8f, 0.35f, 0.22f, 10), "Leaf", GliderFx.transform, new Vector3(0f, 0f, -1.2f), Vector3.one, Mats.BroadLeaf);
-            var stem = new List<Vector3> { new Vector3(0f, 0f, -1.25f), new Vector3(0f, 0.05f, -1.5f), new Vector3(0f, 0f, -1.7f) };
-            Prim.Shape(Meshes.Sweep(stem, (t, a) => 0.03f, 6, 1f, 1f), "Stem", GliderFx.transform, Vector3.zero, Vector3.one, Mats.Vine);
+            // Leaf glider: hangs from the grip point in model space, so the body can swing beneath it.
+            var gliderRoot = Prim.Group("LeafGlider", Root, GripPoint);
+            GliderFx = gliderRoot.gameObject;
+            Glider = GliderFx.AddComponent<LeafGlider>();
+            Glider.Build();
 
             MagnetFx = Prim.Group("VineMagnet", body, new Vector3(0f, 1.1f, 0f));
             Prim.Shape(ball, "Orb", MagnetFx, new Vector3(0.75f, 0f, 0f), Vector3.one * 0.22f, Mats.Gem, null, false);
@@ -484,6 +515,177 @@ namespace JungleEscape
             }
 
             Snap(Idle(0f));
+        }
+    }
+
+    /// <summary>
+    /// The Leaf Glider: one huge leaf spread like a wing (midrib across the span, pointed tips drooping into an
+    /// arch, a cambered airfoil chord), held from a wooden control bar by four vine lines.
+    /// The leaf is a live mesh: its tips flex up under load, the trailing edge flutters in the airflow and
+    /// gusts ripple across it. The veins and midrib bend with it. Banking and pitching are driven by the
+    /// player's glide physics through <see cref="Drive"/>.
+    /// </summary>
+    public class LeafGlider : MonoBehaviour
+    {
+        const float Span = 2.9f, Chord = 1.5f, CanopyHeight = 0.95f;
+        const int NU = 9, NV = 17;
+
+        Transform canopy;
+        Mesh leaf, ribs;
+        Vector3[] leafBase, ribsBase, leafNow, ribsNow;
+        Transform[] lines;
+        Vector3[] lineAttach, lineBar;
+        float load, gust, time;
+
+        /// <summary>Vertical offset of the leaf surface at canopy-space (x, z), from load, flutter and gusts.</summary>
+        float Deform(float x, float z)
+        {
+            float v = x / Span + 0.5f, u = z / Chord + 0.5f;
+            float s = 2f * v - 1f;
+            float flex = load * 0.16f * s * s;                                           // tips bend up under load
+            float trail = Mathf.Clamp01(1f - u);
+            float flutter = (0.022f + 0.03f * gust) * trail * trail * Mathf.Sin(time * 17f + v * 8f); // trailing edge
+            float ripple = 0.012f * gust * Mathf.Sin(time * 6f - v * 9f + u * 4f);        // gust ripples across the leaf
+            return flex + flutter + ripple;
+        }
+
+        static float Shape(float u, float v)
+        {
+            float s = 2f * v - 1f;
+            // Arched span (tips droop), cambered chord (airfoil hump, thinner toward the tips), leading edge raised.
+            return -0.5f * s * s + 0.15f * Mathf.Sin(Mathf.PI * Mathf.Clamp01(u)) * (1f - 0.6f * s * s) + 0.06f * (u - 0.5f);
+        }
+
+        public void Build()
+        {
+            canopy = Prim.Group("Canopy", transform, new Vector3(0f, CanopyHeight, 0.05f));
+
+            // ---- The leaf: a grid mapped so the leaf texture's length runs across the span ----
+            var verts = new List<Vector3>();
+            var uvs = new List<Vector2>();
+            var tris = new List<int>();
+            for (int j = 0; j < NV; j++)
+                for (int i = 0; i < NU; i++)
+                {
+                    float u = i / (NU - 1f), v = j / (NV - 1f);
+                    verts.Add(new Vector3((v - 0.5f) * Span, Shape(u, v), (u - 0.5f) * Chord));
+                    uvs.Add(new Vector2(u, v));
+                }
+            for (int j = 0; j < NV - 1; j++)
+                for (int i = 0; i < NU - 1; i++)
+                {
+                    int a = j * NU + i, b = a + 1, c = a + NU, d = c + 1;
+                    tris.Add(a); tris.Add(c); tris.Add(b);
+                    tris.Add(b); tris.Add(c); tris.Add(d);
+                }
+            leaf = new Mesh { name = "GliderLeaf" };
+            leaf.MarkDynamic();
+            leaf.SetVertices(verts);
+            leaf.SetUVs(0, uvs);
+            leaf.SetTriangles(tris, 0);
+            leaf.RecalculateNormals();
+            leaf.RecalculateTangents();
+            leaf.bounds = new Bounds(Vector3.zero, new Vector3(Span + 1f, 2f, Chord + 1f));
+            Prim.Shape(leaf, "Leaf", canopy, Vector3.zero, Vector3.one, Mats.BroadLeaf);
+
+            // ---- Midrib, stalk and veins (combined; they bend with the leaf) ----
+            var parts = new List<CombineInstance>();
+            var mid = new List<Vector3>();
+            for (int j = 0; j <= 16; j++)
+            {
+                float v = j / 16f;
+                mid.Add(new Vector3((v - 0.5f) * Span, Shape(0.5f, v) + 0.012f, 0f));
+            }
+            // The stalk continues past the base of the leaf and curls down a little
+            var stalk = new List<Vector3> { mid[0], mid[0] + new Vector3(-0.14f, 0.0f, 0f), mid[0] + new Vector3(-0.26f, -0.06f, 0.02f) };
+            parts.Add(new CombineInstance { mesh = Meshes.Sweep(mid, (t, a) => Mathf.Lerp(0.026f, 0.006f, t), 6, 1f, 2f), transform = Matrix4x4.identity });
+            parts.Add(new CombineInstance { mesh = Meshes.Sweep(stalk, (t, a) => 0.026f, 6, 1f, 2f, true), transform = Matrix4x4.identity });
+            for (int k = 1; k <= 7; k++)
+            {
+                float v0 = k / 8.5f;
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    var vein = new List<Vector3>();
+                    for (int q = 0; q <= 4; q++)
+                    {
+                        float f = q / 4f;
+                        float u = 0.5f + side * 0.44f * f;
+                        float v = v0 + 0.05f * f;            // veins sweep toward the tip
+                        vein.Add(new Vector3((v - 0.5f) * Span, Shape(u, v) + 0.008f, (u - 0.5f) * Chord));
+                    }
+                    parts.Add(new CombineInstance { mesh = Meshes.Sweep(vein, (t, a) => Mathf.Lerp(0.007f, 0.002f, t), 4, 1f, 2f), transform = Matrix4x4.identity });
+                }
+            }
+            ribs = Meshes.Combine(parts, "GliderRibs");
+            ribs.MarkDynamic();
+            Prim.Shape(ribs, "Ribs", canopy, Vector3.zero, Vector3.one, Mats.Vine, null, false);
+
+            leafBase = leaf.vertices; leafNow = (Vector3[])leafBase.Clone();
+            ribsBase = ribs.vertices; ribsNow = (Vector3[])ribsBase.Clone();
+
+            // ---- Control bar the explorer holds ----
+            var bar = new List<Vector3> { new Vector3(-0.5f, 0f, 0f), new Vector3(0f, 0.012f, 0f), new Vector3(0.5f, 0f, 0f) };
+            Prim.Shape(Meshes.Sweep(bar, (t, a) => 0.022f, 8, 1f, 2f, true), "Bar", transform, Vector3.zero, Vector3.one, Mats.Bark);
+            var knot = Meshes.Ball(6, 8);
+            for (int k = -1; k <= 1; k += 2)
+                Prim.Shape(knot, "Lashing", transform, new Vector3(k * 0.45f, 0f, 0f), new Vector3(0.06f, 0.05f, 0.05f), Mats.Rope, null, false);
+
+            // ---- Four vine lines from the bar ends up to the leaf ----
+            var lineMesh = Meshes.Limb(1f, 0.008f, 0.008f, 5, 2);
+            lines = new Transform[4];
+            lineAttach = new Vector3[4];
+            lineBar = new Vector3[4];
+            for (int i = 0; i < 4; i++)
+            {
+                float sx = i % 2 == 0 ? -1f : 1f, sz = i < 2 ? 1f : -1f;
+                lineBar[i] = new Vector3(sx * 0.45f, 0f, 0f);
+                lineAttach[i] = new Vector3(sx * 0.8f, 0f, sz * 0.38f);
+                lineAttach[i].y = Shape(lineAttach[i].z / Chord + 0.5f, lineAttach[i].x / Span + 0.5f) - 0.01f;
+                lines[i] = Prim.Shape(lineMesh, "Line", transform, Vector3.zero, Vector3.one, Mats.Vine, null, false).transform;
+            }
+            Drive(0f, 0f, 0.5f, 0f, 0f);
+        }
+
+        /// <summary>Called each frame while gliding.</summary>
+        /// <param name="bank">Roll of the wing into the turn (deg).</param>
+        /// <param name="pitch">Nose-up (negative) / nose-down (positive) pitch (deg).</param>
+        /// <param name="loadFactor">Aerodynamic load: 0 slack, ~1 level flight, more in a climb or turn.</param>
+        /// <param name="gustiness">0..1 turbulence.</param>
+        public void Drive(float bank, float pitch, float loadFactor, float gustiness, float dt)
+        {
+            time += dt;
+            load = Mathf.Lerp(load, loadFactor, 1f - Mathf.Exp(-6f * dt));
+            gust = gustiness;
+            canopy.localRotation = Quaternion.Euler(pitch, 0f, bank);
+
+            for (int i = 0; i < leafBase.Length; i++)
+            {
+                var p = leafBase[i];
+                p.y += Deform(p.x, p.z);
+                leafNow[i] = p;
+            }
+            leaf.vertices = leafNow;
+            leaf.RecalculateNormals();
+            for (int i = 0; i < ribsBase.Length; i++)
+            {
+                var p = ribsBase[i];
+                p.y += Deform(p.x, p.z);
+                ribsNow[i] = p;
+            }
+            ribs.vertices = ribsNow;
+
+            // Lines stay taut between the bar and their points on the (moving) leaf.
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var a = lineAttach[i];
+                a.y += Deform(a.x, a.z);
+                Vector3 top = canopy.localPosition + canopy.localRotation * a;
+                Vector3 bottom = lineBar[i];
+                Vector3 d = top - bottom;
+                lines[i].localPosition = top;
+                lines[i].localRotation = Quaternion.FromToRotation(Vector3.down, -d.normalized);
+                lines[i].localScale = new Vector3(1f, d.magnitude, 1f);
+            }
         }
     }
 }
