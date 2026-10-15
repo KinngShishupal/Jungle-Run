@@ -83,6 +83,7 @@ namespace JungleEscape
         Canoe canoe;
         bool riding;
         float wRide, rideOffset;   // where he landed in the canoe relative to its middle (eases to 0)
+        float hopGrace;            // just hopped out of the canoe: lands on the boardwalk, never in the sea
         float strokePhase;         // paddling: 0..1 per stroke
         int strokeCount;
         Transform paddle;
@@ -173,9 +174,9 @@ namespace JungleEscape
                 if (fastFalling) g = FastFallGravity;
                 vy -= g * dt;
                 y += vy * dt;
-                if (y <= 0f && !TrackGenerator.InDitch(s)) Land(gm, -vy);
+                if (y <= 0f && (!TrackGenerator.InDitch(s) || hopGrace > 0f)) Land(gm, -vy);
                 else if (vy <= 0f && TryBoardCanoe()) { }
-                else if (y < Canoe.WaterY && Biomes.Current == BiomeType.WaterWorld && TrackGenerator.InDitch(s)) StartSwimming();
+                else if (y < Canoe.WaterY && Biomes.Current == BiomeType.WaterWorld && TrackGenerator.InDitch(s) && !OverCanoe() && hopGrace <= 0f) StartSwimming();
                 if (y < -2.8f && TrackGenerator.InDitch(s) && !swimming) { gm.OnFellIntoRavine(); return; }   // missed the vines
             }
 
@@ -185,7 +186,7 @@ namespace JungleEscape
             if (!swinging && !riding && !swimming) s += gm.Speed * dt;   // on the vine the pendulum moves him; in the canoe, the canoe does; swimming is slow
             if (!swinging && !riding) TryGrabVine(gm);
             // Ran (or rolled) off the edge of a ravine: start falling
-            if (grounded && !swinging && !riding && !IsGliding && TrackGenerator.InDitch(s)) { grounded = false; vy = 0f; rollTimer = 0f; }
+            if (grounded && !swinging && !riding && !IsGliding && hopGrace <= 0f && TrackGenerator.InDitch(s)) { grounded = false; vy = 0f; rollTimer = 0f; }
             TrackPath.Place(transform, x, y, s);
             float z = s;
 
@@ -206,6 +207,7 @@ namespace JungleEscape
             if (stumbleTimer > 0f) stumbleTimer -= dt;
             if (invuln > 0f) invuln -= dt;
             if (vineCooldown > 0f) vineCooldown -= dt;
+            if (hopGrace > 0f) hopGrace -= dt;
         }
 
         void HandleInput(SwipeDir s, GameManager gm)
@@ -382,8 +384,8 @@ namespace JungleEscape
                 paddle = new GameObject("Paddle").transform;
                 paddle.SetParent(transform, false);
                 var wood = Mats.Lit("PaddleWood", Tex.Planks, new Color(0.72f, 0.52f, 0.34f), 0.3f);
-                Prim.Shape(Meshes.Limb(1.45f, 0.022f, 0.022f, 6, 2), "Shaft", paddle, Vector3.zero, Vector3.one, wood);
-                Prim.Shape(Meshes.Ball(8, 10), "Blade", paddle, new Vector3(0f, -1.42f, 0f), new Vector3(0.17f, 0.42f, 0.035f), wood);
+                Prim.Shape(Meshes.Limb(1.62f, 0.022f, 0.022f, 6, 2), "Shaft", paddle, Vector3.zero, Vector3.one, wood);
+                Prim.Shape(Meshes.Ball(8, 10), "Blade", paddle, new Vector3(0f, -1.6f, 0f), new Vector3(0.17f, 0.44f, 0.035f), wood);
                 Prim.Shape(Meshes.Ball(6, 8), "Grip", paddle, new Vector3(0f, 0.02f, 0f), new Vector3(0.09f, 0.05f, 0.05f), wood);
             }
             paddle.gameObject.SetActive(show);
@@ -397,8 +399,8 @@ namespace JungleEscape
 
             // Splash as the blade enters the water
             float waterWorldY = transform.position.y - y + Canoe.WaterY;
-            bool wet = paddle.TransformPoint(0f, -1.45f, 0f).y < waterWorldY;
-            if (wet && !bladeWet) SeaLife.Splash(paddle.TransformPoint(0f, -1.3f, 0f), 3, 0.5f);
+            bool wet = paddle.TransformPoint(0f, -1.65f, 0f).y < waterWorldY;
+            if (wet && !bladeWet) SeaLife.Splash(paddle.TransformPoint(0f, -1.5f, 0f), 3, 0.5f);
             bladeWet = wet;
         }
 
@@ -461,13 +463,21 @@ namespace JungleEscape
             }
         }
 
+        bool OverCanoe()
+        {
+            foreach (var c in Canoe.All)
+                if (c != null && !c.Used && c.Path == TrackPath.Current && c.Covers(s, x)) return true;
+            return false;
+        }
+
         /// <summary>Dropping off the end of the broken boardwalk: lands in the canoe if it's under him.</summary>
         bool TryBoardCanoe()
         {
             foreach (var c in Canoe.All)
             {
                 if (c == null || c.Used || c.Path != TrackPath.Current) continue;
-                if (!c.Covers(s, x) || y > c.Floor + 0.05f) continue;
+                // Board as soon as he drops below the rim (it sits above the waterline), then stand on the floor
+                if (!c.Covers(s, x) || y > c.Rim) continue;
                 canoe = c;
                 riding = true;
                 c.Board(vy);
@@ -491,13 +501,16 @@ namespace JungleEscape
             y = canoe.Floor;
             vy = 0f;
             grounded = false;
-            if (s >= TrackGenerator.DitchFarEdge(s) - 1.8f)
+            if (s >= TrackGenerator.DitchFarEdge(s) - 0.8f)
             {
-                // Hop out onto the boardwalk
+                // Step up and hop out onto the boardwalk. Start from boardwalk level (the canoe floor is below the
+                // waterline) and land safely even if the hop comes down a little short of the edge.
                 riding = false;
                 canoe.Release();
                 canoe = null;
-                vy = 7.5f;
+                y = 0.02f;
+                vy = 4.5f;
+                hopGrace = 0.8f;
                 AudioDirector.Play("jump", 0.6f);
             }
         }
@@ -607,6 +620,14 @@ namespace JungleEscape
             var pickup = other.GetComponent<Pickup>();
             if (pickup != null) { pickup.Collect(); return; }
 
+            // Rammed a rock or a drifting log in the canoe
+            var hazard = other.GetComponent<WaterHazard>();
+            if (hazard != null)
+            {
+                if (riding && !hazard.Hit && invuln <= 0f) { hazard.Smash(); gm.OnCanoeCrash(hazard.CrashLine); }
+                return;
+            }
+
             var ob = other.GetComponent<Obstacle>();
             if (ob == null || ob.Handled) return;
             if (IsGliding || swinging || riding || swimming || invuln > 0f) return;
@@ -667,7 +688,7 @@ namespace JungleEscape
             jumpBufferTimer = landTimer = stumbleTimer = 0f;
             wAir = wGlide = wSwing = 0f;
             swinging = false; vine = null; vineCooldown = 0f;
-            riding = false; canoe = null; wRide = 0f;
+            riding = false; canoe = null; wRide = 0f; hopGrace = 0f;
             swimming = false; wSwim = 0f;
             invuln = 0f;
             knocked = false;
@@ -686,6 +707,7 @@ namespace JungleEscape
         public void Knockout()
         {
             knocked = true;
+            if (canoe != null) canoe.Release();   // an empty canoe drifts to a stop
             knockTimer = 0f;
             knockLanded = false;
             human?.Restart(HumanoidCharacter.Clip.Fall);
@@ -728,7 +750,7 @@ namespace JungleEscape
             TrackPath.Place(transform, x, 0f, s);
             wAir = wGlide = wSwing = 0f;
             swinging = false; vine = null; vineCooldown = 0f;
-            riding = false; canoe = null; wRide = 0f;
+            riding = false; canoe = null; wRide = 0f; hopGrace = 0f;
             swimming = false; wSwim = 0f;
             rig.Snap(ExplorerRig.Gallop(runPhase, 0f));
             human?.SnapTo(HumanoidCharacter.Clip.Run);

@@ -239,6 +239,17 @@ namespace JungleEscape
             LoseChance(Creatures.CrashLine(ob.Creature) ?? CrashMessage(ob.Type), ob);
         }
 
+        /// <summary>Rammed something on the water: the canoe rides on, but it costs a chance.</summary>
+        public void OnCanoeCrash(string reason)
+        {
+            if (State != GameState.Playing) return;
+            Cam.Shake(0.35f, 0.3f);
+            AudioDirector.Play("crash", 0.8f);
+            AudioDirector.Play("step_wood", 1f, 0.6f);
+            Vibrate();
+            LoseChance(reason, null);
+        }
+
         /// <summary>Missed the vines (or the canoe) and fell into a ravine (or the sea): costs a chance; with chances left he climbs out on the far side.</summary>
         public void OnFellIntoRavine()
         {

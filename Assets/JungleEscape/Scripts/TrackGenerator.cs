@@ -25,10 +25,13 @@ namespace JungleEscape
         // A ravine across the trail (jungle): swing over it on a vine, or fall in
         const float DitchA = 20f, DitchB = 32.5f, DitchDepth = 9f;
         // A broken stretch of boardwalk (water world): cross the open water in a canoe, or fall in
-        const float WaterGapA = 8f, WaterGapB = 42f;
+        const float WaterGapA = 8f, WaterGapLength = 160f;   // a long canoe trip, running on over several chunks
 
         /// <summary>Where a gap (ravine or open water) lies within a chunk, for the given world.</summary>
-        static Vector2 GapSpan(BiomeType b) => b == BiomeType.WaterWorld ? new Vector2(WaterGapA, WaterGapB) : new Vector2(DitchA, DitchB);
+        static Vector2 GapSpan(BiomeType b) => b == BiomeType.WaterWorld ? new Vector2(WaterGapA, WaterGapA + WaterGapLength) : new Vector2(DitchA, DitchB);
+
+        /// <summary>The part of a gap lying inside the chunk being built (chunk-local), or (-100, -100).</summary>
+        Vector2 chunkGap = new Vector2(-100f, -100f);
         const float CaveA = 6f, CaveB = 44f;
         const float WaterLevel = -1.35f;
         const float SeaLevel = -0.45f;          // water world sea surface, just below the boardwalk
@@ -44,7 +47,7 @@ namespace JungleEscape
 
         enum Feature { None, River, Cave, RockyPass, Ditch }
 
-        struct Span { public float S0, S1; }
+        struct Span { public float S0, S1, X; }   // X: the canoe's lane (water gaps)
 
         /// <summary>One trail being generated: its path, world and progress.</summary>
         class Cursor
@@ -100,6 +103,7 @@ namespace JungleEscape
         {
             foreach (var c in chunks) if (c != null) Destroy(c);
             DesertLife.ClearRoaming();
+            Canoe.ClearAll();
             chunks.Clear();
             chunkStarts.Clear();
             rivers.Clear();
@@ -248,17 +252,30 @@ namespace JungleEscape
             if (c.Biome == BiomeType.WaterWorld && feature == Feature.River) feature = Feature.None; // all water already
             // Gaps: ravines with swing vines in the jungle, open water with a canoe in the water world
             if (feature == Feature.Ditch && c.Biome != BiomeType.Jungle && c.Biome != BiomeType.WaterWorld) feature = Feature.None;
+            // A long stretch of open water can run on from the previous chunk into this one...
+            bool continuing = c == main && ditches.Count > 0 && ditches[ditches.Count - 1].S0 < s0 && ditches[ditches.Count - 1].S1 > s0;
+            if (continuing) feature = Feature.Ditch;
+            // ...and is only started where no fork is due before it ends
+            if (!continuing && feature == Feature.Ditch && c.Biome == BiomeType.WaterWorld && (c != main || s0 + WaterGapA + WaterGapLength + ChunkLength > nextForkS))
+                feature = Feature.None;
             if (feature == Feature.River) rivers.Add(new Span { S0 = s0 + RiverA, S1 = s0 + RiverB });
-            if (feature == Feature.Ditch) { var g = GapSpan(c.Biome); ditches.Add(new Span { S0 = s0 + g.x, S1 = s0 + g.y }); }
+            if (feature == Feature.Ditch && !continuing) { var g = GapSpan(c.Biome); ditches.Add(new Span { S0 = s0 + g.x, S1 = s0 + g.y, X = Random.Range(-1, 2) * PlayerController.LaneWidth }); }
+            chunkGap = new Vector2(-100f, -100f);
+            if (feature == Feature.Ditch)
+            {
+                var d = ditches[ditches.Count - 1];
+                chunkGap = new Vector2(Mathf.Max(0f, d.S0 - s0), Mathf.Min(ChunkLength, d.S1 - s0));
+            }
 
             TrackPath.Use(c.Path);
             var chunk = new GameObject("Chunk " + c.Biome + " " + feature);
             chunk.transform.SetParent(transform, false);
             trailLift = nearFork && c.InnerSide > 0 ? 0.012f : 0f;
             BuildScenery(chunk.transform, s0, feature, c.Biome, nearFork ? c.InnerSide : 0);
-            if (feature == Feature.Ditch)
+            if (feature == Feature.Ditch && c.Biome == BiomeType.WaterWorld) SpawnWaterHazards(chunk.transform, s0, ditches[ditches.Count - 1], c.Biome);
+            if (feature == Feature.Ditch && !continuing)
             {
-                if (c.Biome == BiomeType.WaterWorld) SpawnCanoe(chunk.transform, s0, c.Biome);   // sail across the open water
+                if (c.Biome == BiomeType.WaterWorld) SpawnCanoe(chunk.transform, s0, c.Biome, ditches[ditches.Count - 1].X);   // sail across the open water
                 else SpawnDitchVines(chunk.transform, s0, c.Biome);                             // swing across the ravine
             }
 
@@ -281,7 +298,7 @@ namespace JungleEscape
         {
             foreach (var r in rivers) if (s > r.S0 - 4f && s < r.S1 + 4f) return true;
             // Keep the run-up to a ravine clear, so the runner can line up and jump for a vine
-            foreach (var r in ditches) if (s > r.S0 - 14f && s < r.S1 + 5f) return true;
+            foreach (var r in ditches) if (s > r.S0 - 14f && s < r.S1 + 14f) return true;   // ...and room to land and recover after
             return false;
         }
 
@@ -306,15 +323,39 @@ namespace JungleEscape
             return s;
         }
 
-        /// <summary>A canoe waiting just past the broken end of the boardwalk in one lane, and coins strung across the water.</summary>
-        void SpawnCanoe(Transform parent, float s0, BiomeType biome)
+        /// <summary>A canoe waiting just past the broken end of the boardwalk in its lane, and a few coins to start the trip.</summary>
+        void SpawnCanoe(Transform parent, float s0, BiomeType biome, float x)
         {
-            int lane = Random.Range(-1, 2);
-            float x = lane * PlayerController.LaneWidth;
             // Running off the end he drops into it 1.9 m (slowest) to 4.6 m (fastest) out: the canoe spans 0.75-5.05 m
-            Canoe.Spawn(parent, s0 + WaterGapA + 2.9f, x);
-            for (float z = WaterGapA + 6f; z < WaterGapB - 3f; z += 3f)
+            Canoe.Spawn(transform, s0 + WaterGapA + 2.9f, x);   // owned by the generator: the ride outlasts this chunk
+            for (float z = WaterGapA + 7f; z < WaterGapA + 15f; z += 3f)
                 Pickup.Create(PickupType.Banana, new Vector3(x, Canoe.FloorY + 0.9f, s0 + z), parent, biome);
+        }
+
+        /// <summary>
+        /// Hazards on the open water, for the part of the gap inside this chunk: coral rocks and drifting logs
+        /// blocking one or two lanes at a time (more often as the run speeds up), with coins in a clear lane.
+        /// The first and last 16 m stay clear for boarding and hopping out.
+        /// </summary>
+        void SpawnWaterHazards(Transform chunk, float s0, Span gap, BiomeType biome)
+        {
+            float z0 = Mathf.Max(s0, gap.S0 + 16f), z1 = Mathf.Min(s0 + ChunkLength, gap.S1 - 16f);
+            float d = Difficulty;
+            var lanes = new List<int> { -1, 0, 1 };
+            for (float s = z0 + Random.Range(1f, 5f); s < z1; s += Random.Range(Mathf.Lerp(16f, 11f, d), Mathf.Lerp(22f, 15f, d)))
+            {
+                for (int i = lanes.Count - 1; i > 0; i--) { int j = Random.Range(0, i + 1); (lanes[i], lanes[j]) = (lanes[j], lanes[i]); }
+                int blocked = Random.value < Mathf.Lerp(0.25f, 0.6f, d) ? 2 : 1;
+                for (int k = 0; k < blocked; k++)
+                {
+                    bool rock = Random.value < 0.6f;
+                    float x = lanes[k] * PlayerController.LaneWidth + (rock ? Random.Range(-0.4f, 0.4f) : 0f);
+                    WaterHazard.Spawn(chunk, rock ? WaterHazard.Kind.Rock : WaterHazard.Kind.Log, s, x);
+                }
+                float free = lanes[blocked] * PlayerController.LaneWidth;
+                for (int c = 0; c < 3; c++)
+                    Pickup.Create(PickupType.Banana, new Vector3(free, Canoe.FloorY + 0.9f, s + 3f + c * 2.5f), chunk, biome);
+            }
         }
 
         /// <summary>Three vines (one per lane) hanging just over the near edge, and a line of money tracing a swing.</summary>
@@ -567,7 +608,7 @@ namespace JungleEscape
             groundDrop = biome == BiomeType.WaterWorld ? 1.4f : 0f;
             bool river = feature == Feature.River;
             bool ditch = feature == Feature.Ditch;
-            var gap = GapSpan(biome);
+            var gap = chunkGap;
             riverLocalA = river ? RiverA : ditch ? gap.x : -100f;
             riverLocalB = river ? RiverB : ditch ? gap.y : -100f;
 
@@ -1002,9 +1043,10 @@ namespace JungleEscape
 
             // The break: splintered plank ends sticking out over the water, a few broken stumps of piling,
             // and a mooring post at each end of the gap.
-            for (int end = 0; end < 2; end++)
+            for (int end = 0; end < 2; end++)   // (only where the boardwalk actually breaks off within this chunk)
             {
                 float z = end == 0 ? gap.x : gap.y, dir = end == 0 ? 1f : -1f;
+                if (z <= 0.01f || z >= ChunkLength - 0.01f) continue;
                 for (int i = 0; i < 6; i++)
                 {
                     float x = Mathf.Lerp(-4.2f, 4.2f, i / 5f) + Random.Range(-0.3f, 0.3f);
