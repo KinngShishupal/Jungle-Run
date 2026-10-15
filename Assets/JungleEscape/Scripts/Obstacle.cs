@@ -179,9 +179,9 @@ namespace JungleEscape
                     break;
 
                 case ObstacleType.Branch:
-                    // Solid from 1.1 m up: standing or jumping hits it, rolling passes under.
-                    col.center = new Vector3(0f, 2.3f, 0f);
-                    col.size = new Vector3(2.2f, 2.4f, 0.5f);
+                    // Solid from 0.85 m up: galloping or jumping hits it, rolling (0.8 m) passes under.
+                    col.center = new Vector3(0f, 2.175f, 0f);
+                    col.size = new Vector3(2.2f, 2.65f, 0.5f);
                     BuildBranch(t, variant);
                     break;
 
@@ -300,6 +300,13 @@ namespace JungleEscape
 
         static void BuildBranch(Transform t, int v)
         {
+            // Hung low enough that the galloping runner must roll (bottom of the bough ~0.95 m, collider from 0.85 m).
+            t = Prim.Group("Bough", t, new Vector3(0f, -0.35f, 0f));
+            BuildBranchParts(t, v);
+        }
+
+        static void BuildBranchParts(Transform t, int v)
+        {
             if (branchMeshes == null)
             {
                 branchMeshes = new Mesh[3];
@@ -337,7 +344,7 @@ namespace JungleEscape
                            new Vector3(s, s * 0.85f, s * 0.8f), Mats.Canopy, new Vector3(0f, Random.Range(0f, 360f), 0f));
             }
 
-            // Leaves drooping off the front edge (stay above the 1.1 m roll gap)
+            // Leaves drooping off the front edge (stay above the roll gap)
             if (drapeLeaf == null) drapeLeaf = Meshes.Leaf(0.42f, 0.3f, 0.1f, 0.03f);
             var drape = new Model();
             for (int i = 0; i < 6; i++)

@@ -179,6 +179,43 @@ namespace JungleEscape
             };
         }
 
+        /// <summary>
+        /// Running on all fours like a gorilla: a knuckle-walking gallop. The torso is pitched forward almost
+        /// level with the head up, the arms work as front legs (both reaching and landing a beat apart), then
+        /// the legs swing through together to push off; the body rises and rocks with each bound.
+        /// p is the stride phase in radians (one bound per stride).
+        /// </summary>
+        public static Pose Gallop(float p, float speedNorm)
+        {
+            float amp = Mathf.Lerp(0.85f, 1.05f, speedNorm);
+            float s = Mathf.Sin(p), push = Mathf.Max(0f, Mathf.Sin(2f * p));
+
+            // Arms: front legs. Shoulder ~-75 holds the arm vertical under a torso pitched 75 degrees forward;
+            // with the hips down at ~0.5 m the knuckles just reach the ground (shoulder ~0.66 m, arm ~0.62 m).
+            float armL = -75f + 40f * amp * Mathf.Sin(p), armR = -75f + 40f * amp * Mathf.Sin(p + 0.5f);
+            float elbL = -(8f + 38f * Mathf.Max(0f, Mathf.Cos(p))), elbR = -(8f + 38f * Mathf.Max(0f, Mathf.Cos(p + 0.5f)));
+            // Legs: half a stride behind the arms, swinging through together with a slight stagger.
+            float lp = p + Mathf.PI;
+            float thL = -55f + 30f * amp * Mathf.Sin(lp), thR = -55f + 30f * amp * Mathf.Sin(lp + 0.35f);   // deep crouch
+            float knL = 98f + 32f * Mathf.Max(0f, Mathf.Cos(lp)), knR = 98f + 32f * Mathf.Max(0f, Mathf.Cos(lp + 0.35f));
+
+            return new Pose
+            {
+                ThighL = new Vector3(thL, 0f, 6f), ThighR = new Vector3(thR, 0f, -6f),
+                KneeL = new Vector3(knL, 0f, 0f), KneeR = new Vector3(knR, 0f, 0f),
+                AnkleL = new Vector3(-10f + 20f * Mathf.Max(0f, Mathf.Cos(lp)), 0f, 0f), AnkleR = new Vector3(-10f + 20f * Mathf.Max(0f, Mathf.Cos(lp + 0.35f)), 0f, 0f),
+                // Arms slightly out to the sides, like a gorilla's
+                ShoulderL = new Vector3(armL, 0f, -10f), ShoulderR = new Vector3(armR, 0f, 10f),
+                ElbowL = new Vector3(elbL, 0f, 0f), ElbowR = new Vector3(elbR, 0f, 0f),
+                // Back nearly level and flexing with the bound; head up, looking ahead
+                Spine = new Vector3(75f + 6f * s, 4f * Mathf.Sin(p + 0.3f), 0f),
+                Neck = new Vector3(-60f - 5f * s, 0f, 0f),
+                Pelvis = new Vector3(-6f * s, 0f, 3f * Mathf.Sin(p)),
+                // Low to the ground, lifting off with each push
+                BodyY = -0.42f + 0.08f * push * amp
+            };
+        }
+
         public static Pose Tuck()
         {
             return new Pose

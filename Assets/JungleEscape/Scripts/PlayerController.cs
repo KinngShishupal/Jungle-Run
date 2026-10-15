@@ -36,7 +36,7 @@ namespace JungleEscape
         const float GlideHeight = 5f;
         const float HangLength = 1.35f;       // grip to the body's centre of mass (pendulum length)
         const float InvulnAfterRevive = 2f;
-        const float StandHeight = 1.8f;
+        const float StandHeight = 1.1f;       // galloping on all fours (head about 1 m up)
         const float RollHeight = 0.8f;
         const float LandDuration = 0.24f;
         const float StumbleDuration = 0.45f;
@@ -437,7 +437,7 @@ namespace JungleEscape
             invuln = InvulnAfterRevive;
             TrackPath.Place(transform, x, 0f, s);
             wAir = wGlide = 0f;
-            rig.Snap(ExplorerRig.Run(runPhase, 0f));
+            rig.Snap(ExplorerRig.Gallop(runPhase, 0f));
             human?.SnapTo(HumanoidCharacter.Clip.Run);
         }
 
@@ -460,7 +460,8 @@ namespace JungleEscape
             wAir = Mathf.MoveTowards(wAir, !grounded && !IsGliding ? 1f : 0f, dt * 9f);
             wGlide = Mathf.MoveTowards(wGlide, IsGliding ? 1f : 0f, dt * 3f);
 
-            var pose = ExplorerRig.Run(runPhase, speedNorm);
+            // He runs on all fours, knuckle-galloping like a gorilla.
+            var pose = ExplorerRig.Gallop(runPhase, speedNorm);
             float rollAngle = 0f;
             float sharp = 35f;
             float runWeight = grounded && !IsRolling ? 1f - wAir : 0f;
