@@ -469,7 +469,7 @@ namespace JungleEscape
                 path.Add(dir * (OuterRadius(y) + 0.0015f) + Vector3.up * y);
             }
             // Flattened against the glass: a thin tube squashed by sampling only a narrow radius
-            return Meshes.Sweep(path, (t, ang) => width * Mathf.Pow(Mathf.Sin(Mathf.PI * t), 0.6f) * (0.35f + 0.65f * Mathf.Abs(Mathf.Cos(ang))), 6, 1f, 2f);
+            return Meshes.Sweep(path, (t, ang) => width * Mathf.Pow(Mathf.Max(0f, Mathf.Sin(Mathf.PI * t)), 0.6f) * (0.35f + 0.65f * Mathf.Abs(Mathf.Cos(ang))), 6, 1f, 2f);
         }
 
         /// <summary>Gives a mesh white vertex colours, which the particle shaders multiply in.</summary>

@@ -239,7 +239,7 @@ namespace JungleEscape
             LoseChance(Creatures.CrashLine(ob.Creature) ?? CrashMessage(ob.Type), ob);
         }
 
-        /// <summary>Missed the vines and fell into a ravine: costs a chance; with chances left he climbs out on the far side.</summary>
+        /// <summary>Missed the vines (or the canoe) and fell into a ravine (or the sea): costs a chance; with chances left he climbs out on the far side.</summary>
         public void OnFellIntoRavine()
         {
             if (State != GameState.Playing) return;
@@ -247,7 +247,7 @@ namespace JungleEscape
             AudioDirector.Play("crash", 0.9f);
             Vibrate();
             if (Lives > 1) Player.RespawnPastRavine();
-            LoseChance("Fell into the ravine!", null);
+            LoseChance(Biomes.Current == BiomeType.WaterWorld ? "Fell into the sea!" : "Fell into the ravine!", null);
         }
 
         /// <summary>

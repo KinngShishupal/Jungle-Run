@@ -291,6 +291,73 @@ namespace JungleEscape
             };
         }
 
+        /// <summary>
+        /// Kneeling in the canoe and paddling: shins flat on the floor, hips over the heels, leaning into each
+        /// stroke. The lower hand (on the stroke side) reaches forward, plants the blade and pulls it back past
+        /// the hip; the upper hand drives over the top; the torso winds up and unwinds with the stroke.
+        /// </summary>
+        /// <param name="u">Stroke phase 0..1 (0-0.6 power in the water, 0.6-1 recovery).</param>
+        /// <param name="side">+1 paddling on the right, -1 on the left.</param>
+        public static Pose Paddle(float u, float side, float roll)
+        {
+            bool power = u < 0.6f;
+            float k = power ? u / 0.6f : (u - 0.6f) / 0.4f;
+            float e = k * k * (3f - 2f * k);
+            float lowArm = power ? Mathf.Lerp(-70f, 18f, e) : Mathf.Lerp(18f, -70f, e);     // reach, pull, recover
+            float lowOut = power ? 22f : 22f + 14f * Mathf.Sin(k * Mathf.PI);              // swings out over the water on the way back
+            float topArm = power ? Mathf.Lerp(-118f, -82f, e) : Mathf.Lerp(-82f, -118f, e);
+            float lean = power ? Mathf.Lerp(30f, 16f, e) : Mathf.Lerp(16f, 30f, e);
+            float twist = side * (power ? Mathf.Lerp(22f, -14f, e) : Mathf.Lerp(-14f, 22f, e));
+
+            var p = new Pose
+            {
+                // Kneeling: thighs nearly upright, shins back along the floor
+                ThighL = new Vector3(-14f, 0f, 7f), ThighR = new Vector3(-14f, 0f, -7f),
+                KneeL = new Vector3(98f, 0f, 0f), KneeR = new Vector3(98f, 0f, 0f),
+                AnkleL = new Vector3(42f, 0f, 0f), AnkleR = new Vector3(42f, 0f, 0f),
+                Spine = new Vector3(lean, twist, -roll * 0.5f),
+                Neck = new Vector3(-lean * 0.6f, -twist * 0.7f, roll * 0.3f),
+                Pelvis = new Vector3(0f, twist * 0.3f, 0f),
+                BodyY = -0.39f
+            };
+            if (side > 0f)
+            {
+                p.ShoulderR = new Vector3(lowArm, 0f, lowOut); p.ElbowR = new Vector3(-12f, 0f, 0f);
+                p.ShoulderL = new Vector3(topArm, 0f, 14f); p.ElbowL = new Vector3(-48f, 0f, 0f);
+            }
+            else
+            {
+                p.ShoulderL = new Vector3(lowArm, 0f, -lowOut); p.ElbowL = new Vector3(-12f, 0f, 0f);
+                p.ShoulderR = new Vector3(topArm, 0f, -14f); p.ElbowR = new Vector3(-48f, 0f, 0f);
+            }
+            return p;
+        }
+
+        /// <summary>
+        /// Swimming front crawl after falling in: body flat in the water, head up, arms windmilling alternately
+        /// (reach, pull under the body, recover over the water) and a quick flutter kick.
+        /// </summary>
+        public static Pose Swim(float t)
+        {
+            float c = t * Mathf.PI * 2f * 0.9f;                      // ~0.9 strokes per second per arm
+            float armL = -175f + 175f * (0.5f + 0.5f * Mathf.Sin(c));
+            float armR = -175f + 175f * (0.5f + 0.5f * Mathf.Sin(c + Mathf.PI));
+            float kick = Mathf.Sin(t * 14f) * 16f;
+            return new Pose
+            {
+                ShoulderL = new Vector3(armL, 0f, -10f), ShoulderR = new Vector3(armR, 0f, 10f),
+                ElbowL = new Vector3(-20f - 30f * Mathf.Max(0f, Mathf.Cos(c)), 0f, 0f),
+                ElbowR = new Vector3(-20f - 30f * Mathf.Max(0f, Mathf.Cos(c + Mathf.PI)), 0f, 0f),
+                ThighL = new Vector3(8f + kick, 0f, 3f), ThighR = new Vector3(8f - kick, 0f, -3f),
+                KneeL = new Vector3(15f + Mathf.Max(0f, kick), 0f, 0f), KneeR = new Vector3(15f + Mathf.Max(0f, -kick), 0f, 0f),
+                AnkleL = new Vector3(40f, 0f, 0f), AnkleR = new Vector3(40f, 0f, 0f),
+                // Body flat in the water, rolling with each stroke; head lifted to see
+                Spine = new Vector3(78f, 0f, 8f * Mathf.Sin(c)), Neck = new Vector3(-55f, 0f, 0f),
+                Pelvis = new Vector3(0f, 0f, 6f * Mathf.Sin(c)),
+                BodyY = -0.6f
+            };
+        }
+
         public static Pose Idle(float t)
         {
             float breath = Mathf.Sin(t * 1.6f);

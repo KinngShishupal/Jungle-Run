@@ -77,7 +77,8 @@ namespace JungleEscape
             float ms = pc.TrackS - distance;
             // Over a ravine the troop leaps across in a high arc (monkeys are great jumpers)
             float across = TrackGenerator.DitchProgress(ms);
-            float leap = across >= 0f ? 3.2f * Mathf.Sin(across * Mathf.PI) : 0f;
+            // (and over open water they swim, half under)
+            float leap = across < 0f ? 0f : Biomes.Current == BiomeType.WaterWorld ? -0.6f : 3.2f * Mathf.Sin(across * Mathf.PI);
             transform.SetPositionAndRotation(TrackPath.Point(ms, pc.TrackX * 0.85f, leap), TrackPath.Rotation(ms));
 
             bool running = !idle && gm.State == GameState.Playing;

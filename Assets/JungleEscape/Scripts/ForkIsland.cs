@@ -69,7 +69,8 @@ namespace JungleEscape
             return root;
         }
 
-        static float Hump(float width, float t) => Mathf.Min(2f, width * 0.07f) * Mathf.Pow(Mathf.Sin(Mathf.PI * t), 0.8f);
+        // (sin(pi) is a tiny negative number in floating point, and a negative to the power 0.8 is NaN: clamp it)
+        static float Hump(float width, float t) => Mathf.Min(2f, width * 0.07f) * Mathf.Pow(Mathf.Max(0f, Mathf.Sin(Mathf.PI * t)), 0.8f);
 
         static Mesh IslandMesh(List<Vector3> rowsL, List<Vector3> rowsR)
         {

@@ -79,6 +79,17 @@ namespace JungleEscape
         float ropeAngle, ropeVel, vineCooldown;
         Vector2 grabCorrection;   // eases the hands onto the rope end after the grab
         const float VineRelease = 0.68f; // radians (~39 degrees) past the bottom of the swing
+        // Canoe ride across open water (water world)
+        Canoe canoe;
+        bool riding;
+        float wRide, rideOffset;   // where he landed in the canoe relative to its middle (eases to 0)
+        float strokePhase;         // paddling: 0..1 per stroke
+        int strokeCount;
+        Transform paddle;
+        // Swimming after falling into the sea
+        bool swimming;
+        float swimT, wSwim;
+        const float SwimTime = 1.6f, SwimSpeed = 2.6f;
         // Leaf glider flight: time aloft, pilot input (climb/dive), and the hanging body as a 2-axis pendulum
         float glideTime, glideInputT, glideInput, glideOffset;
         float swing, swingVel, swingPitch, swingPitchVel, prevXVel, prevVy, glideLoad, glideFlare;
@@ -139,13 +150,21 @@ namespace JungleEscape
             x = Mathf.SmoothDamp(x, targetX, ref xVel, LaneSmoothTime, MaxLateralSpeed, dt);
 
             // ---- Vertical ----
-            if (swinging)
+            if (riding)
+            {
+                RideCanoe(dt, gm);
+            }
+            else if (swinging)
             {
                 SwingOnVine(dt, gm);
             }
             else if (IsGliding)
             {
                 GlideFlight(dt);
+            }
+            else if (swimming)
+            {
+                if (Swim(dt, gm)) return;
             }
             else if (!grounded)
             {
@@ -155,16 +174,18 @@ namespace JungleEscape
                 vy -= g * dt;
                 y += vy * dt;
                 if (y <= 0f && !TrackGenerator.InDitch(s)) Land(gm, -vy);
-                else if (y < -2.8f) { gm.OnFellIntoRavine(); return; }   // missed the vine: down into the ravine
+                else if (vy <= 0f && TryBoardCanoe()) { }
+                else if (y < Canoe.WaterY && Biomes.Current == BiomeType.WaterWorld && TrackGenerator.InDitch(s)) StartSwimming();
+                if (y < -2.8f && TrackGenerator.InDitch(s) && !swimming) { gm.OnFellIntoRavine(); return; }   // missed the vines
             }
 
             SetCollider(IsRolling);
 
             // ---- Forward ----
-            if (!swinging) s += gm.Speed * dt;   // on the vine, the pendulum moves him
-            if (!swinging) TryGrabVine(gm);
+            if (!swinging && !riding && !swimming) s += gm.Speed * dt;   // on the vine the pendulum moves him; in the canoe, the canoe does; swimming is slow
+            if (!swinging && !riding) TryGrabVine(gm);
             // Ran (or rolled) off the edge of a ravine: start falling
-            if (grounded && !swinging && !IsGliding && TrackGenerator.InDitch(s)) { grounded = false; vy = 0f; rollTimer = 0f; }
+            if (grounded && !swinging && !riding && !IsGliding && TrackGenerator.InDitch(s)) { grounded = false; vy = 0f; rollTimer = 0f; }
             TrackPath.Place(transform, x, y, s);
             float z = s;
 
@@ -195,13 +216,14 @@ namespace JungleEscape
                 case SwipeDir.Right: Step(1, gm); break;
                 case SwipeDir.Up:
                     if (IsGliding) { glideInput = 1.3f; glideInputT = 1.1f; break; }   // pull up
-                    if (swinging) break;
+                    if (swinging || riding) break;
                     if (grounded) Jump();
                     else jumpBufferTimer = JumpBuffer; // remember it and jump on touchdown
                     break;
                 case SwipeDir.Down:
                     if (IsGliding) { glideInput = -3.4f; glideInputT = 1.1f; break; }  // dive
                     if (swinging) { dropVine = true; break; }                             // let go of the vine
+                    if (riding) break;
                     if (!grounded)
                     {
                         fastFalling = true;
@@ -345,6 +367,141 @@ namespace JungleEscape
             glideLoad = Mathf.Clamp(1f + ay * 0.08f + Mathf.Abs(ax) * 0.03f, 0.3f, 1.9f) * Mathf.Lerp(1f, 0.55f, glideFlare);
         }
 
+        bool bladeWet;
+
+        /// <summary>
+        /// The paddle, held between both hands: the shaft runs from the upper hand down through the lower one,
+        /// so the blade dips into the water beside the canoe on each stroke, throwing up a splash as it bites.
+        /// </summary>
+        void UpdatePaddle()
+        {
+            bool show = riding || wRide > 0.5f;
+            if (paddle == null)
+            {
+                if (!show) return;
+                paddle = new GameObject("Paddle").transform;
+                paddle.SetParent(transform, false);
+                var wood = Mats.Lit("PaddleWood", Tex.Planks, new Color(0.72f, 0.52f, 0.34f), 0.3f);
+                Prim.Shape(Meshes.Limb(1.45f, 0.022f, 0.022f, 6, 2), "Shaft", paddle, Vector3.zero, Vector3.one, wood);
+                Prim.Shape(Meshes.Ball(8, 10), "Blade", paddle, new Vector3(0f, -1.42f, 0f), new Vector3(0.17f, 0.42f, 0.035f), wood);
+                Prim.Shape(Meshes.Ball(6, 8), "Grip", paddle, new Vector3(0f, 0.02f, 0f), new Vector3(0.09f, 0.05f, 0.05f), wood);
+            }
+            paddle.gameObject.SetActive(show);
+            if (!show) return;
+            bool right = PaddleSide > 0f;
+            Vector3 top = (right ? rig.ElbowL : rig.ElbowR).TransformPoint(0f, -0.29f, 0f);
+            Vector3 low = (right ? rig.ElbowR : rig.ElbowL).TransformPoint(0f, -0.29f, 0f);
+            Vector3 dir = (low - top).normalized;
+            paddle.position = top - dir * 0.08f;
+            paddle.rotation = Quaternion.FromToRotation(Vector3.down, dir) * Quaternion.Euler(0f, right ? 0f : 180f, 0f);
+
+            // Splash as the blade enters the water
+            float waterWorldY = transform.position.y - y + Canoe.WaterY;
+            bool wet = paddle.TransformPoint(0f, -1.45f, 0f).y < waterWorldY;
+            if (wet && !bladeWet) SeaLife.Splash(paddle.TransformPoint(0f, -1.3f, 0f), 3, 0.5f);
+            bladeWet = wet;
+        }
+
+        // ---------------- Swimming (fell into the sea) ----------------
+
+        float swimSplashT;
+
+        /// <summary>Hits the water: a big splash, and the water kills most of the fall.</summary>
+        void StartSwimming()
+        {
+            swimming = true;
+            swimT = 0f;
+            vy *= 0.25f;
+            fastFalling = false; rollOnLand = false; rollTimer = 0f;
+            SeaLife.Splash(transform.position + Vector3.up * 0.4f, 12, 1.2f);
+            AudioDirector.Play("land", 0.6f, 0.6f);
+            AudioDirector.Play("bubbles", 0.7f);
+        }
+
+        /// <summary>
+        /// Floating and swimming: buoyancy and drag settle him with his body at the surface, bobbing on the swell,
+        /// and he swims forward slowly - then climbs out on the far side (which costs a chance).
+        /// Returns true if that ended this frame's update.
+        /// </summary>
+        bool Swim(float dt, GameManager gm)
+        {
+            swimT += dt;
+            float surface = Canoe.WaterY - 0.38f + 0.05f * Mathf.Sin(swimT * 3.5f);
+            vy += (30f * (surface - y) - 7f * vy) * dt;
+            y += vy * dt;
+            s += SwimSpeed * dt;
+            grounded = false;
+            if ((swimSplashT -= dt) <= 0f)
+            {
+                swimSplashT = 0.55f;   // a hand slapping in with each stroke
+                SeaLife.Splash(transform.position + transform.forward * 0.7f + Vector3.up * 0.2f + transform.right * Random.Range(-0.3f, 0.3f), 2, 0.45f);
+            }
+            if (swimT < SwimTime) return false;
+            swimming = false;
+            gm.OnFellIntoRavine();
+            return true;
+        }
+
+        // ---------------- Canoe ride ----------------
+
+        public bool IsRiding => riding;
+
+        /// <summary>+1 paddling on the right, -1 on the left (switches every two strokes).</summary>
+        float PaddleSide => (strokeCount / 2) % 2 == 0 ? 1f : -1f;
+
+        /// <summary>True when an empty canoe waits just ahead (for the "get in the canoe" hint).</summary>
+        public bool CanoeAhead
+        {
+            get
+            {
+                if (riding || !grounded) return false;
+                foreach (var c in Canoe.All)
+                    if (c != null && !c.Used && c.Path == TrackPath.Current && c.S - s > 3f && c.S - s < 24f) return true;
+                return false;
+            }
+        }
+
+        /// <summary>Dropping off the end of the broken boardwalk: lands in the canoe if it's under him.</summary>
+        bool TryBoardCanoe()
+        {
+            foreach (var c in Canoe.All)
+            {
+                if (c == null || c.Used || c.Path != TrackPath.Current) continue;
+                if (!c.Covers(s, x) || y > c.Floor + 0.05f) continue;
+                canoe = c;
+                riding = true;
+                c.Board(vy);
+                rideOffset = s - c.S;
+                y = c.Floor; vy = 0f;
+                grounded = false; fastFalling = false; rollOnLand = false; rollTimer = 0f; jumpBufferTimer = 0f;
+                AudioDirector.Play("land", 0.6f);
+                AudioDirector.Play("step_wood", 0.9f, 0.8f);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>Carried across the open water; hops out onto the boardwalk at the far side.</summary>
+        void RideCanoe(float dt, GameManager gm)
+        {
+            if (canoe == null) { riding = false; return; }
+            canoe.Ride(dt, gm.Speed, x);
+            rideOffset *= Mathf.Exp(-4f * dt);   // settle into the middle of the canoe
+            s = canoe.S + rideOffset;
+            y = canoe.Floor;
+            vy = 0f;
+            grounded = false;
+            if (s >= TrackGenerator.DitchFarEdge(s) - 1.8f)
+            {
+                // Hop out onto the boardwalk
+                riding = false;
+                canoe.Release();
+                canoe = null;
+                vy = 7.5f;
+                AudioDirector.Play("jump", 0.6f);
+            }
+        }
+
         // ---------------- Vine swing ----------------
 
         public bool IsSwinging => swinging;
@@ -452,7 +609,7 @@ namespace JungleEscape
 
             var ob = other.GetComponent<Obstacle>();
             if (ob == null || ob.Handled) return;
-            if (IsGliding || swinging || invuln > 0f) return;
+            if (IsGliding || swinging || riding || swimming || invuln > 0f) return;
 
             // Ran into the side of an obstacle while moving sideways -> stumble and bounce back off it.
             float offset = ob.Lane * LaneWidth - x;
@@ -510,6 +667,8 @@ namespace JungleEscape
             jumpBufferTimer = landTimer = stumbleTimer = 0f;
             wAir = wGlide = wSwing = 0f;
             swinging = false; vine = null; vineCooldown = 0f;
+            riding = false; canoe = null; wRide = 0f;
+            swimming = false; wSwim = 0f;
             invuln = 0f;
             knocked = false;
             for (int i = 0; i < power.Length; i++) power[i] = 0f;
@@ -543,6 +702,9 @@ namespace JungleEscape
             grounded = true;
             fastFalling = false; rollOnLand = false; rollTimer = 0f; jumpBufferTimer = 0f;
             swinging = false; vine = null;
+            if (canoe != null) canoe.Release();
+            swimming = false;
+            riding = false; canoe = null;
             TrackPath.Place(transform, x, 0f, s);
         }
 
@@ -566,6 +728,8 @@ namespace JungleEscape
             TrackPath.Place(transform, x, 0f, s);
             wAir = wGlide = wSwing = 0f;
             swinging = false; vine = null; vineCooldown = 0f;
+            riding = false; canoe = null; wRide = 0f;
+            swimming = false; wSwim = 0f;
             rig.Snap(ExplorerRig.Gallop(runPhase, 0f));
             human?.SnapTo(HumanoidCharacter.Clip.Run);
         }
@@ -586,9 +750,11 @@ namespace JungleEscape
             runPhase += dt * Mathf.PI * 2f * Mathf.Lerp(2.5f, 3.3f, speedNorm);
 
             // State weights are smoothed; the run cycle itself plays crisply (no joint lag).
-            wAir = Mathf.MoveTowards(wAir, !grounded && !IsGliding && !swinging ? 1f : 0f, dt * 9f);
+            wAir = Mathf.MoveTowards(wAir, !grounded && !IsGliding && !swinging && !riding && !swimming ? 1f : 0f, dt * 9f);
             wGlide = Mathf.MoveTowards(wGlide, IsGliding ? 1f : 0f, dt * 3f);
             wSwing = Mathf.MoveTowards(wSwing, swinging ? 1f : 0f, dt * 8f);
+            wRide = Mathf.MoveTowards(wRide, riding ? 1f : 0f, dt * 8f);
+            wSwim = Mathf.MoveTowards(wSwim, swimming ? 1f : 0f, dt * 5f);
 
             // He runs on all fours, knuckle-galloping like a gorilla.
             var pose = ExplorerRig.Gallop(runPhase, speedNorm);
@@ -631,6 +797,21 @@ namespace JungleEscape
                 pose = ExplorerRig.Pose.Lerp(pose, ExplorerRig.Swing(animTime, ropeVel, ropeAngle), ws);
                 hang = Mathf.Max(hang, ws);   // hanging from the hands, along the rope
             }
+            if (wRide > 0f)
+            {
+                // Kneeling and paddling, switching sides every two strokes; rocking with the canoe
+                if (riding)
+                {
+                    strokePhase += dt / 0.85f;
+                    if (strokePhase >= 1f) { strokePhase -= 1f; strokeCount++; }
+                }
+                float roll = canoe != null ? canoe.RollDeg : 0f;
+                var ride = ExplorerRig.Paddle(strokePhase, PaddleSide, roll);
+                ride.Bank = roll;
+                pose = ExplorerRig.Pose.Lerp(pose, ride, Mathf.SmoothStep(0f, 1f, wRide));
+            }
+            if (wSwim > 0f)
+                pose = ExplorerRig.Pose.Lerp(pose, ExplorerRig.Swim(swimT), Mathf.SmoothStep(0f, 1f, wSwim));
 
             // Absorb the landing: knees bend, body drops, then springs back up.
             if (grounded && !IsRolling && landTimer > 0f)
@@ -669,6 +850,7 @@ namespace JungleEscape
                 rig.Glider.Drive(wingBank, wingPitch, glideLoad, Mathf.PerlinNoise(glideTime * 0.7f, 5.3f), dt);
             }
             rig.Apply(pose, dt, rollAngle, 0f, Mathf.Lerp(sharp, 45f, hang)); // follow the pendulum closely while hanging
+            UpdatePaddle();
             DriveHuman(dt, speedNorm);
             rig.Secondary(animTime, runPhase, runWeight, speedNorm);
             rig.GroundShadow(y);

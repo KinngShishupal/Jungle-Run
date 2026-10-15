@@ -24,6 +24,11 @@ namespace JungleEscape
         const float RiverA = 17.5f, RiverB = 30f;
         // A ravine across the trail (jungle): swing over it on a vine, or fall in
         const float DitchA = 20f, DitchB = 32.5f, DitchDepth = 9f;
+        // A broken stretch of boardwalk (water world): cross the open water in a canoe, or fall in
+        const float WaterGapA = 8f, WaterGapB = 42f;
+
+        /// <summary>Where a gap (ravine or open water) lies within a chunk, for the given world.</summary>
+        static Vector2 GapSpan(BiomeType b) => b == BiomeType.WaterWorld ? new Vector2(WaterGapA, WaterGapB) : new Vector2(DitchA, DitchB);
         const float CaveA = 6f, CaveB = 44f;
         const float WaterLevel = -1.35f;
         const float SeaLevel = -0.45f;          // water world sea surface, just below the boardwalk
@@ -241,16 +246,21 @@ namespace JungleEscape
             bool nearFork = s0 < c.ForkS + ForkLength;
             var feature = nearFork ? Feature.None : PickFeature();
             if (c.Biome == BiomeType.WaterWorld && feature == Feature.River) feature = Feature.None; // all water already
-            if (feature == Feature.Ditch && c.Biome != BiomeType.Jungle) feature = Feature.None;   // the swing vines are jungle only
+            // Gaps: ravines with swing vines in the jungle, open water with a canoe in the water world
+            if (feature == Feature.Ditch && c.Biome != BiomeType.Jungle && c.Biome != BiomeType.WaterWorld) feature = Feature.None;
             if (feature == Feature.River) rivers.Add(new Span { S0 = s0 + RiverA, S1 = s0 + RiverB });
-            if (feature == Feature.Ditch) ditches.Add(new Span { S0 = s0 + DitchA, S1 = s0 + DitchB });
+            if (feature == Feature.Ditch) { var g = GapSpan(c.Biome); ditches.Add(new Span { S0 = s0 + g.x, S1 = s0 + g.y }); }
 
             TrackPath.Use(c.Path);
             var chunk = new GameObject("Chunk " + c.Biome + " " + feature);
             chunk.transform.SetParent(transform, false);
             trailLift = nearFork && c.InnerSide > 0 ? 0.012f : 0f;
             BuildScenery(chunk.transform, s0, feature, c.Biome, nearFork ? c.InnerSide : 0);
-            if (feature == Feature.Ditch) SpawnDitchVines(chunk.transform, s0, c.Biome);   // swing across the ravine
+            if (feature == Feature.Ditch)
+            {
+                if (c.Biome == BiomeType.WaterWorld) SpawnCanoe(chunk.transform, s0, c.Biome);   // sail across the open water
+                else SpawnDitchVines(chunk.transform, s0, c.Biome);                             // swing across the ravine
+            }
 
             float end = s0 + ChunkLength;
             while (c.NextRow < end)
@@ -294,6 +304,17 @@ namespace JungleEscape
         {
             foreach (var r in ditches) if (s > r.S0 - 1f && s < r.S1 + 1f) return r.S1;
             return s;
+        }
+
+        /// <summary>A canoe waiting just past the broken end of the boardwalk in one lane, and coins strung across the water.</summary>
+        void SpawnCanoe(Transform parent, float s0, BiomeType biome)
+        {
+            int lane = Random.Range(-1, 2);
+            float x = lane * PlayerController.LaneWidth;
+            // Running off the end he drops into it 1.9 m (slowest) to 4.6 m (fastest) out: the canoe spans 0.75-5.05 m
+            Canoe.Spawn(parent, s0 + WaterGapA + 2.9f, x);
+            for (float z = WaterGapA + 6f; z < WaterGapB - 3f; z += 3f)
+                Pickup.Create(PickupType.Banana, new Vector3(x, Canoe.FloorY + 0.9f, s0 + z), parent, biome);
         }
 
         /// <summary>Three vines (one per lane) hanging just over the near edge, and a line of money tracing a swing.</summary>
@@ -546,10 +567,11 @@ namespace JungleEscape
             groundDrop = biome == BiomeType.WaterWorld ? 1.4f : 0f;
             bool river = feature == Feature.River;
             bool ditch = feature == Feature.Ditch;
-            riverLocalA = river ? RiverA : ditch ? DitchA : -100f;
-            riverLocalB = river ? RiverB : ditch ? DitchB : -100f;
+            var gap = GapSpan(biome);
+            riverLocalA = river ? RiverA : ditch ? gap.x : -100f;
+            riverLocalB = river ? RiverB : ditch ? gap.y : -100f;
 
-            var trail = TrailMesh(s0, river, ditch);
+            var trail = TrailMesh(s0, river, ditch ? gap.x : -100f, ditch ? gap.y : -100f);
             TrackPath.Deform(trail, s0);
             owned.Meshes.Add(trail);
             Prim.Shape(trail, "Trail", c, new Vector3(0f, trailLift, 0f), Vector3.one, Biomes.Remap(Mats.Trail, biome), null, false);
@@ -603,10 +625,10 @@ namespace JungleEscape
             if (river) BuildRiver(b, c, s0, owned);
             if (biome == BiomeType.WaterWorld)
             {
-                BuildSea(b, c, s0, owned, skipSide);
+                BuildSea(b, c, s0, owned, skipSide, ditch ? gap : new Vector2(-100f, -100f));
                 if (feature != Feature.Cave) SeaAnimals(c, s0, skipSide);
             }
-            if (feature == Feature.Ditch) BuildRavine(b, c, s0, owned);
+            if (feature == Feature.Ditch && biome == BiomeType.Jungle) BuildRavine(b, c, s0, owned);
             if (feature == Feature.Cave) BuildCave(b, c, s0, owned);
             else
             {
@@ -957,23 +979,55 @@ namespace JungleEscape
         }
 
         /// <summary>The sea around the boardwalk: water to the horizon, pilings and edge boards.</summary>
-        void BuildSea(ChunkBuilder b, Transform c, float s0, OwnedMeshes owned, int skipSide)
+        void BuildSea(ChunkBuilder b, Transform c, float s0, OwnedMeshes owned, int skipSide, Vector2 gap)
         {
             var sea = WaterMesh(s0, -1f, ChunkLength + 1f, SeaLevel);
             TrackPath.Deform(sea, s0);
             owned.Meshes.Add(sea);
             Prim.Shape(sea, "Sea", c, Vector3.zero, Vector3.one, Biomes.Remap(Mats.Water, BiomeType.WaterWorld), null, false);
 
+            bool hasGap = gap.x > 0f;
             for (int s = -1; s <= 1; s += 2)
             {
-                // Edge board along the boardwalk
-                b.Add(beamMesh, Mats.Planks, Matrix4x4.TRS(new Vector3(s * 5.05f, -0.12f, ChunkLength * 0.5f), Quaternion.identity,
-                      new Vector3(1f, 0.8f, ChunkLength)));
+                // Edge board along the boardwalk (in two pieces where the boardwalk is broken)
+                if (!hasGap) Beam(b, s, 0f, ChunkLength);
+                else { Beam(b, s, 0f, gap.x); Beam(b, s, gap.y, ChunkLength); }
                 if (s == skipSide) continue;
                 // Pilings driven into the sea floor
                 for (float z = 1.5f; z < ChunkLength; z += 3.5f)
-                    b.Add(stiltMesh, Mats.Bark, Matrix4x4.TRS(new Vector3(s * 5.1f, 0.25f, z), Quaternion.Euler(0f, Random.Range(0f, 360f), 0f), Vector3.one));
+                    if (!hasGap || z < gap.x - 0.5f || z > gap.y + 0.5f)
+                        b.Add(stiltMesh, Mats.Bark, Matrix4x4.TRS(new Vector3(s * 5.1f, 0.25f, z), Quaternion.Euler(0f, Random.Range(0f, 360f), 0f), Vector3.one));
             }
+            if (!hasGap) return;
+
+            // The break: splintered plank ends sticking out over the water, a few broken stumps of piling,
+            // and a mooring post at each end of the gap.
+            for (int end = 0; end < 2; end++)
+            {
+                float z = end == 0 ? gap.x : gap.y, dir = end == 0 ? 1f : -1f;
+                for (int i = 0; i < 6; i++)
+                {
+                    float x = Mathf.Lerp(-4.2f, 4.2f, i / 5f) + Random.Range(-0.3f, 0.3f);
+                    float len = Random.Range(0.3f, 1.1f);
+                    b.Add(plankMesh, Mats.Planks, Matrix4x4.TRS(new Vector3(x, -0.06f - Random.Range(0f, 0.05f), z + dir * len * 0.5f),
+                          Quaternion.Euler(Random.Range(-6f, 6f), Random.Range(-12f, 12f) + 90f, Random.Range(-4f, 4f)), new Vector3(len / 8.6f, 1f, Random.Range(0.6f, 1f))));   // plankMesh is 8.6 m long
+                }
+                for (int s = -1; s <= 1; s += 2)
+                    b.Add(stiltMesh, Mats.Bark, Matrix4x4.TRS(new Vector3(s * 4.6f, 1.3f, z - dir * 0.3f), Quaternion.identity, new Vector3(1.3f, 1f, 1.3f)));
+            }
+            for (int i = 0; i < 5; i++)
+            {
+                float z = Random.Range(gap.x + 2f, gap.y - 2f);
+                float s = Random.value < 0.5f ? -1f : 1f;
+                b.Add(stiltMesh, Mats.Bark, Matrix4x4.TRS(new Vector3(s * Random.Range(4.5f, 5.5f), Random.Range(-1.6f, -1.1f), z),
+                      Quaternion.Euler(Random.Range(-15f, 15f), 0f, Random.Range(-15f, 15f)), Vector3.one));
+            }
+        }
+
+        void Beam(ChunkBuilder b, int side, float z0, float z1)
+        {
+            if (z1 - z0 < 0.2f) return;
+            b.Add(beamMesh, Mats.Planks, Matrix4x4.TRS(new Vector3(side * 5.05f, -0.12f, (z0 + z1) * 0.5f), Quaternion.identity, new Vector3(1f, 0.8f, z1 - z0)));
         }
 
         // ---------------- River crossing ----------------
@@ -1278,7 +1332,7 @@ namespace JungleEscape
 
         // ---------------- Ground meshes ----------------
 
-        static Mesh TrailMesh(float s0, bool riverGap, bool ditchGap)
+        static Mesh TrailMesh(float s0, bool riverGap, float gapA, float gapB)
         {
             const int cols = 11;
             const float step = 2.5f;
@@ -1301,7 +1355,7 @@ namespace JungleEscape
             {
                 float mid = (i + 0.5f) * step;
                 if (riverGap && mid > RiverA && mid < RiverB) continue; // the bridge spans this gap
-                if (ditchGap && mid > DitchA && mid < DitchB) continue;  // the ravine
+                if (mid > gapA && mid < gapB) continue;                // a ravine or broken boardwalk
                 for (int j = 0; j < cols - 1; j++)
                 {
                     int a = i * cols + j, b = a + 1, c = a + cols, d = c + 1;

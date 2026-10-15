@@ -173,6 +173,11 @@ namespace JungleEscape
             y = PowerBar(gm, PickupType.Shield, "Coconut Helmet", y);
             PowerBar(gm, PickupType.Bonanza, "Golden Idol  x2", y);
 
+            if (gm.Player.CanoeAhead)
+            {
+                float a = 0.7f + 0.3f * Mathf.Sin(Time.unscaledTime * 9f);
+                Shadow(new Rect(0, h * 0.38f, w, 90), "Steer into the canoe's lane!", warn, new Color(0.6f, 0.95f, 1f, a));
+            }
             if (gm.Player.VineAhead)
             {
                 float a = 0.7f + 0.3f * Mathf.Sin(Time.unscaledTime * 9f);
