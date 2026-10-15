@@ -13,7 +13,7 @@ namespace JungleEscape
         const float RefW = 1080f, RefH = 1920f;
 
         GUIStyle title, big, mid, small, hudLeft, hudRight, button, smallButton, warn, panel, bar, barFill, barGold;
-        Texture2D scrimTop, scrimBottom, dimTex;
+        Texture2D scrimTop, scrimBottom, dimTex, heartFull, heartEmpty;
         bool ready;
 
         static readonly Color Gold = new Color(1f, 0.83f, 0.42f);
@@ -144,6 +144,16 @@ namespace JungleEscape
             Shadow(new Rect(48, top - 6, 340, 100), gm.RunBananas.ToString("N0"), hudLeft, Gold);
             Shadow(new Rect(48, top + 76, 340, 50), Pickup.CurrencyName(Biomes.Current), small, new Color(1f, 1f, 1f, 0.85f), TextAnchor.MiddleLeft);
 
+            // Chances left: three hearts in the top-right of the money panel
+            if (heartFull == null) { heartFull = Heart(new Color(0.92f, 0.2f, 0.18f), true); heartEmpty = Heart(new Color(0f, 0f, 0f, 0.45f), false); }
+            for (int i = 0; i < GameManager.MaxLives; i++)
+            {
+                bool full = i < gm.Lives;
+                float pulse = full && gm.Lives == 1 ? 1f + 0.12f * Mathf.Sin(Time.unscaledTime * 8f) : 1f; // the last heart beats
+                float s = 46f * pulse;
+                GUI.DrawTexture(new Rect(262 + i * 44 - (s - 46f) * 0.5f, top + 14 - (s - 46f) * 0.5f, s, s), full ? heartFull : heartEmpty);
+            }
+
             // Score + multiplier (right)
             GUI.Box(new Rect(w - 400, top, 380, 175), GUIContent.none, panel);
             Shadow(new Rect(w - 400, top + 2, 352, 100), Mathf.FloorToInt(gm.Score).ToString("N0"), hudRight, Cream);
@@ -162,6 +172,12 @@ namespace JungleEscape
             y = PowerBar(gm, PickupType.Glider, "Leaf Glider", y);
             y = PowerBar(gm, PickupType.Shield, "Coconut Helmet", y);
             PowerBar(gm, PickupType.Bonanza, "Golden Idol  x2", y);
+
+            if (gm.Player.VineAhead)
+            {
+                float a = 0.7f + 0.3f * Mathf.Sin(Time.unscaledTime * 9f);
+                Shadow(new Rect(0, h * 0.38f, w, 90), "Jump to grab the vine!", warn, new Color(1f, 0.9f, 0.45f, a));
+            }
 
             if (gm.Monkeys.IsClose && gm.RunTime > 2.5f)
             {
@@ -366,6 +382,35 @@ namespace JungleEscape
         {
             var t = new Texture2D(1, 64, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
             for (int y = 0; y < 64; y++) t.SetPixel(0, y, Color.Lerp(bottom, top, y / 63f));
+            t.Apply();
+            return t;
+        }
+
+        /// <summary>A smooth, anti-aliased heart icon: filled, or an outline for a lost chance.</summary>
+        static Texture2D Heart(Color c, bool filled)
+        {
+            const int N = 64;
+            var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            for (int py = 0; py < N; py++)
+                for (int px = 0; px < N; px++)
+                {
+                    // Classic implicit heart: (x^2 + y^2 - 1)^3 - x^2 y^3 <= 0
+                    float x = (px + 0.5f) / N * 2.6f - 1.3f, y = (py + 0.5f) / N * 2.6f - 1.2f;
+                    float f = Mathf.Pow(x * x + y * y - 1f, 3f) - x * x * y * y * y;
+                    float inside = Mathf.Clamp01(0.5f - f * 12f);
+                    float a;
+                    if (filled) a = inside;
+                    else
+                    {
+                        float shrunk = Mathf.Pow(x * x * 1.35f + y * y * 1.35f - 1f, 3f) - x * x * 1.35f * Mathf.Pow(y * 1.16f, 3f);
+                        float hole = Mathf.Clamp01(0.5f - shrunk * 12f);
+                        a = Mathf.Clamp01(inside - hole) + hole * 0.35f;
+                    }
+                    var col = c;
+                    if (filled) col = Color.Lerp(c, Color.white, Mathf.Clamp01((y - 0.3f) * 0.6f) * Mathf.Clamp01(-x * 1.5f)); // a soft highlight
+                    col.a = c.a * a;
+                    t.SetPixel(px, py, col);
+                }
             t.Apply();
             return t;
         }

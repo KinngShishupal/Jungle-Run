@@ -29,6 +29,9 @@ namespace JungleEscape
         public float Distance { get; private set; }
         public float Score { get; private set; }
         public int RunBananas { get; private set; }
+        /// <summary>Chances left this run (a crash or getting caught costs one).</summary>
+        public int Lives { get; private set; }
+        public const int MaxLives = 3;
         public int Streak { get; private set; }
         public int HighScore { get; private set; }
         public int TotalBananas { get; private set; }
@@ -108,6 +111,7 @@ namespace JungleEscape
             Distance = 0f;
             Score = 0f;
             RunBananas = 0;
+            Lives = MaxLives;
             Streak = 0;
             bankedThisRun = 0;
             revives = 0;
@@ -215,8 +219,9 @@ namespace JungleEscape
 
             if (Monkeys.IsClose)
             {
-                Monkeys.Catch();
-                EndRun("The monkeys caught you!");
+                // Caught by the monkeys: that costs a chance
+                AudioDirector.Play("monkey_shriek", 0.6f);
+                LoseChance("The monkeys caught you!", null);
             }
             else
             {
@@ -230,10 +235,39 @@ namespace JungleEscape
             if (State != GameState.Playing) return;
             Cam.Shake(0.45f, 0.35f);
             AudioDirector.Play("crash", 1f);
-            AudioDirector.Play("monkey_shriek", 0.6f);
             Vibrate();
-            Monkeys.Catch();
-            EndRun(Creatures.CrashLine(ob.Creature) ?? CrashMessage(ob.Type));
+            LoseChance(Creatures.CrashLine(ob.Creature) ?? CrashMessage(ob.Type), ob);
+        }
+
+        /// <summary>Missed the vines and fell into a ravine: costs a chance; with chances left he climbs out on the far side.</summary>
+        public void OnFellIntoRavine()
+        {
+            if (State != GameState.Playing) return;
+            Cam.Shake(0.4f, 0.3f);
+            AudioDirector.Play("crash", 0.9f);
+            Vibrate();
+            if (Lives > 1) Player.RespawnPastRavine();
+            LoseChance("Fell into the ravine!", null);
+        }
+
+        /// <summary>
+        /// Uses up one of the run's chances. While some are left the runner shakes it off and keeps going
+        /// (the obstacle breaks, the monkeys close in, a short moment of invulnerability); the last one ends the run.
+        /// </summary>
+        void LoseChance(string reason, Obstacle ob)
+        {
+            Lives = Mathf.Max(0, Lives - 1);
+            if (Lives == 0)
+            {
+                AudioDirector.Play("monkey_shriek", 0.6f);
+                Monkeys.Catch();
+                EndRun(reason);
+                return;
+            }
+            if (ob != null) ob.Smash();
+            Player.ShakeOff();
+            if (ob == null) Monkeys.FallBack(); else Monkeys.Approach(); // shook the monkeys off, or they close in after a crash
+            GameUI.Announce(Lives == 1 ? "LAST CHANCE!" : Lives + " CHANCES LEFT", new Color(1f, 0.45f, 0.35f));
         }
 
         static string CrashMessage(ObstacleType t)
@@ -280,6 +314,7 @@ namespace JungleEscape
 
             Track.ClearAhead(Player.TrackS, 45f);
             Player.Revive();
+            Lives = 1;   // a revive buys one more chance
             Monkeys.FallBack();
             State = GameState.Playing;
             AudioDirector.Play("powerup", 0.8f);

@@ -72,7 +72,13 @@ namespace JungleEscape
         float runPhase;
         int lastStep;
         float rollDustTimer;
-        float wAir, wGlide;
+        float wAir, wGlide, wSwing;
+        // Tarzan vine swing: the rope is a pendulum (angle from straight down, positive = ahead of the pivot)
+        VineSwing vine;
+        bool swinging, dropVine;
+        float ropeAngle, ropeVel, vineCooldown;
+        Vector2 grabCorrection;   // eases the hands onto the rope end after the grab
+        const float VineRelease = 0.68f; // radians (~39 degrees) past the bottom of the swing
         // Leaf glider flight: time aloft, pilot input (climb/dive), and the hanging body as a 2-axis pendulum
         float glideTime, glideInputT, glideInput, glideOffset;
         float swing, swingVel, swingPitch, swingPitchVel, prevXVel, prevVy, glideLoad, glideFlare;
@@ -128,11 +134,16 @@ namespace JungleEscape
             Steer(dt, gm);
             TickTimers(dt);
 
+            if (swinging && vine != null) targetX = vine.X;   // the rope holds him in the vine's line
             // ---- Lateral: critically damped spring toward the steering target ----
             x = Mathf.SmoothDamp(x, targetX, ref xVel, LaneSmoothTime, MaxLateralSpeed, dt);
 
             // ---- Vertical ----
-            if (IsGliding)
+            if (swinging)
+            {
+                SwingOnVine(dt, gm);
+            }
+            else if (IsGliding)
             {
                 GlideFlight(dt);
             }
@@ -143,13 +154,17 @@ namespace JungleEscape
                 if (fastFalling) g = FastFallGravity;
                 vy -= g * dt;
                 y += vy * dt;
-                if (y <= 0f) Land(gm, -vy);
+                if (y <= 0f && !TrackGenerator.InDitch(s)) Land(gm, -vy);
+                else if (y < -2.8f) { gm.OnFellIntoRavine(); return; }   // missed the vine: down into the ravine
             }
 
             SetCollider(IsRolling);
 
             // ---- Forward ----
-            s += gm.Speed * dt;
+            if (!swinging) s += gm.Speed * dt;   // on the vine, the pendulum moves him
+            if (!swinging) TryGrabVine(gm);
+            // Ran (or rolled) off the edge of a ravine: start falling
+            if (grounded && !swinging && !IsGliding && TrackGenerator.InDitch(s)) { grounded = false; vy = 0f; rollTimer = 0f; }
             TrackPath.Place(transform, x, y, s);
             float z = s;
 
@@ -169,6 +184,7 @@ namespace JungleEscape
             if (landTimer > 0f) landTimer -= dt;
             if (stumbleTimer > 0f) stumbleTimer -= dt;
             if (invuln > 0f) invuln -= dt;
+            if (vineCooldown > 0f) vineCooldown -= dt;
         }
 
         void HandleInput(SwipeDir s, GameManager gm)
@@ -179,11 +195,13 @@ namespace JungleEscape
                 case SwipeDir.Right: Step(1, gm); break;
                 case SwipeDir.Up:
                     if (IsGliding) { glideInput = 1.3f; glideInputT = 1.1f; break; }   // pull up
+                    if (swinging) break;
                     if (grounded) Jump();
                     else jumpBufferTimer = JumpBuffer; // remember it and jump on touchdown
                     break;
                 case SwipeDir.Down:
                     if (IsGliding) { glideInput = -3.4f; glideInputT = 1.1f; break; }  // dive
+                    if (swinging) { dropVine = true; break; }                             // let go of the vine
                     if (!grounded)
                     {
                         fastFalling = true;
@@ -327,6 +345,96 @@ namespace JungleEscape
             glideLoad = Mathf.Clamp(1f + ay * 0.08f + Mathf.Abs(ax) * 0.03f, 0.3f, 1.9f) * Mathf.Lerp(1f, 0.55f, glideFlare);
         }
 
+        // ---------------- Vine swing ----------------
+
+        public bool IsSwinging => swinging;
+
+        /// <summary>True when a vine hangs just ahead in his line (for the "jump to grab it" hint).</summary>
+        public bool VineAhead
+        {
+            get
+            {
+                if (swinging || !grounded) return false;
+                foreach (var v in VineSwing.All)
+                {
+                    if (v == null || v.Path != TrackPath.Current) continue;
+                    float ds = s - v.S;
+                    if (ds > -16f && ds < -5f && Mathf.Abs(x - v.X) < 2.2f) return true;
+                }
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Catches a vine if he is in the air (a jump) just before one, within reach of the rope end.
+        /// The rope keeps its length: the runner's hands are eased onto its end. The swing starts with the
+        /// speed he brings along the rope's tangent - and always enough to carry him through to the release.
+        /// </summary>
+        void TryGrabVine(GameManager gm)
+        {
+            if (grounded || IsGliding || vineCooldown > 0f || knocked) return;
+            float handS = s + ExplorerRig.GripPoint.z, handH = y + ExplorerRig.GripPoint.y;
+            const float R = VineSwing.Length, g = 9.8f;
+            foreach (var v in VineSwing.All)
+            {
+                if (v == null || v.Path != TrackPath.Current) continue;
+                float ds = handS - v.S;
+                if (ds < -5.5f || ds > -0.3f || Mathf.Abs(x - v.X) > 1.7f) continue;
+
+                float a = Mathf.Asin(Mathf.Clamp(ds / R, -0.8f, 0.8f));
+                float endH = VineSwing.PivotHeight - R * Mathf.Cos(a);
+                grabCorrection = new Vector2(0f, handH - endH);
+
+                // Speed along the rope's tangent (forward and upward components), kept in a graceful range,
+                // but at least enough energy to rise to the release point: w >= sqrt(2 g dh) / R.
+                float vt = Mathf.Clamp(gm.Speed * Mathf.Cos(a) + vy * Mathf.Sin(a), 6f, 13f);
+                float dh = R * (Mathf.Cos(a) - Mathf.Cos(VineRelease));
+                float need = Mathf.Sqrt(Mathf.Max(0f, 2f * g * dh)) / R;
+                ropeAngle = a;
+                ropeVel = Mathf.Max(vt / R, need * 1.15f + 0.15f);
+                vine = v;
+                swinging = true;
+                dropVine = false;
+                fastFalling = false; rollOnLand = false; jumpBufferTimer = 0f;
+                AudioDirector.Play("jump", 0.6f, 0.8f);
+                AudioDirector.Play("tarzan", 0.75f);
+                return;
+            }
+        }
+
+        /// <summary>The pendulum: gravity swings him down and through; he lets go past the bottom (or on a swipe down).</summary>
+        void SwingOnVine(float dt, GameManager gm)
+        {
+            if (vine == null) { swinging = false; return; }
+            const float R = VineSwing.Length;
+            ropeVel += -(9.8f / R) * Mathf.Sin(ropeAngle) * dt;
+            ropeAngle += ropeVel * dt;
+            grabCorrection *= Mathf.Exp(-9f * dt);
+
+            float handS = vine.S + R * Mathf.Sin(ropeAngle) + grabCorrection.x;
+            float handH = VineSwing.PivotHeight - R * Mathf.Cos(ropeAngle) + grabCorrection.y;
+            s = handS - ExplorerRig.GripPoint.z;
+            y = handH - ExplorerRig.GripPoint.y;
+            vy = R * ropeVel * Mathf.Sin(ropeAngle);
+            grounded = false;
+            vine.Hold(handS, handH);
+
+            if (ropeAngle >= VineRelease || dropVine || ropeVel <= 0f) LetGoOfVine();
+        }
+
+        /// <summary>Let go: flung along the swing's tangent into a long, high leap; the vine swings on by itself.</summary>
+        void LetGoOfVine()
+        {
+            const float R = VineSwing.Length;
+            vy = R * ropeVel * Mathf.Sin(ropeAngle) + (dropVine ? 0f : 2.5f);   // a strong kick at the release clears the ravine
+            if (vine != null) vine.Release(ropeAngle, ropeVel);
+            swinging = false;
+            vine = null;
+            vineCooldown = 1f;
+            invuln = Mathf.Max(invuln, 0.4f);
+            AudioDirector.Play("jump", 0.5f, 1.1f);
+        }
+
         void EndGlide()
         {
             grounded = false; // fall back down
@@ -344,7 +452,7 @@ namespace JungleEscape
 
             var ob = other.GetComponent<Obstacle>();
             if (ob == null || ob.Handled) return;
-            if (IsGliding || invuln > 0f) return;
+            if (IsGliding || swinging || invuln > 0f) return;
 
             // Ran into the side of an obstacle while moving sideways -> stumble and bounce back off it.
             float offset = ob.Lane * LaneWidth - x;
@@ -400,7 +508,8 @@ namespace JungleEscape
             rollTimer = 0f;
             rollOnLand = false;
             jumpBufferTimer = landTimer = stumbleTimer = 0f;
-            wAir = wGlide = 0f;
+            wAir = wGlide = wSwing = 0f;
+            swinging = false; vine = null; vineCooldown = 0f;
             invuln = 0f;
             knocked = false;
             for (int i = 0; i < power.Length; i++) power[i] = 0f;
@@ -426,6 +535,25 @@ namespace JungleEscape
             model?.SetVisible(true);
         }
 
+        /// <summary>After falling into a ravine (with chances left): climbed out on the far side and running on.</summary>
+        public void RespawnPastRavine()
+        {
+            s = TrackGenerator.DitchFarEdge(s) + 1.5f;
+            y = 0f; vy = 0f;
+            grounded = true;
+            fastFalling = false; rollOnLand = false; rollTimer = 0f; jumpBufferTimer = 0f;
+            swinging = false; vine = null;
+            TrackPath.Place(transform, x, 0f, s);
+        }
+
+        /// <summary>Lost a chance but still running: stagger, then a couple of seconds of invulnerability (blinking).</summary>
+        public void ShakeOff()
+        {
+            stumbleTimer = StumbleDuration;
+            invuln = Mathf.Max(invuln, 2f);
+            human?.Restart(HumanoidCharacter.Clip.Stumble);
+        }
+
         public void Revive()
         {
             knocked = false;
@@ -436,7 +564,8 @@ namespace JungleEscape
             power[(int)PickupType.Glider] = 0f;
             invuln = InvulnAfterRevive;
             TrackPath.Place(transform, x, 0f, s);
-            wAir = wGlide = 0f;
+            wAir = wGlide = wSwing = 0f;
+            swinging = false; vine = null; vineCooldown = 0f;
             rig.Snap(ExplorerRig.Gallop(runPhase, 0f));
             human?.SnapTo(HumanoidCharacter.Clip.Run);
         }
@@ -457,8 +586,9 @@ namespace JungleEscape
             runPhase += dt * Mathf.PI * 2f * Mathf.Lerp(2.5f, 3.3f, speedNorm);
 
             // State weights are smoothed; the run cycle itself plays crisply (no joint lag).
-            wAir = Mathf.MoveTowards(wAir, !grounded && !IsGliding ? 1f : 0f, dt * 9f);
+            wAir = Mathf.MoveTowards(wAir, !grounded && !IsGliding && !swinging ? 1f : 0f, dt * 9f);
             wGlide = Mathf.MoveTowards(wGlide, IsGliding ? 1f : 0f, dt * 3f);
+            wSwing = Mathf.MoveTowards(wSwing, swinging ? 1f : 0f, dt * 8f);
 
             // He runs on all fours, knuckle-galloping like a gorilla.
             var pose = ExplorerRig.Gallop(runPhase, speedNorm);
@@ -495,6 +625,12 @@ namespace JungleEscape
                 glide.Bank = swing * Mathf.Rad2Deg;   // the body hangs and swings beneath the grip
                 pose = ExplorerRig.Pose.Lerp(pose, glide, hang);
             }
+            if (wSwing > 0f)
+            {
+                float ws = Mathf.SmoothStep(0f, 1f, wSwing);
+                pose = ExplorerRig.Pose.Lerp(pose, ExplorerRig.Swing(animTime, ropeVel, ropeAngle), ws);
+                hang = Mathf.Max(hang, ws);   // hanging from the hands, along the rope
+            }
 
             // Absorb the landing: knees bend, body drops, then springs back up.
             if (grounded && !IsRolling && landTimer > 0f)
@@ -523,7 +659,7 @@ namespace JungleEscape
             bankNow = pose.Bank;
             yawNow = pose.Yaw;
             rig.Hang = hang;
-            rig.HangPitch = swingPitch * Mathf.Rad2Deg;
+            rig.HangPitch = Mathf.Lerp(swingPitch * Mathf.Rad2Deg, -ropeAngle * Mathf.Rad2Deg, Mathf.SmoothStep(0f, 1f, wSwing));
             if (IsGliding)
             {
                 // The wing leads into lane changes (rolling toward the new lane), pitches up on a climb and
@@ -613,7 +749,7 @@ namespace JungleEscape
             System.Array.Clear(humanWeights, 0, humanWeights.Length);
             float sharp = 14f;
 
-            if (IsGliding)
+            if (IsGliding || swinging)
             {
                 if (human.Has(HumanoidCharacter.Clip.Glide)) { humanWeights[(int)HumanoidCharacter.Clip.Glide] = 1f; human.Play(HumanoidCharacter.Clip.Glide, 1f); }
                 else { humanWeights[(int)HumanoidCharacter.Clip.Jump] = 1f; human.Scrub(HumanoidCharacter.Clip.Jump, 0.5f); }

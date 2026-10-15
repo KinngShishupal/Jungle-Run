@@ -75,7 +75,10 @@ namespace JungleEscape
 
             var pc = gm.Player;
             float ms = pc.TrackS - distance;
-            transform.SetPositionAndRotation(TrackPath.Point(ms, pc.TrackX * 0.85f, 0f), TrackPath.Rotation(ms));
+            // Over a ravine the troop leaps across in a high arc (monkeys are great jumpers)
+            float across = TrackGenerator.DitchProgress(ms);
+            float leap = across >= 0f ? 3.2f * Mathf.Sin(across * Mathf.PI) : 0f;
+            transform.SetPositionAndRotation(TrackPath.Point(ms, pc.TrackX * 0.85f, leap), TrackPath.Rotation(ms));
 
             bool running = !idle && gm.State == GameState.Playing;
             bool excited = !idle && (closeTimer > 0f || caught);

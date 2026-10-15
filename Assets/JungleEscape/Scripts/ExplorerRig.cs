@@ -263,6 +263,34 @@ namespace JungleEscape
             };
         }
 
+        /// <summary>
+        /// Swinging on a vine, Tarzan-style: both hands high on the rope, body hanging along it. Through the
+        /// bottom of the swing (fast forward) the knees tuck up; past it the legs reach forward and up ready
+        /// for the leap; the head stays up, looking where he's going.
+        /// </summary>
+        /// <param name="ropeVel">Swing speed (rad/s, positive forward).</param>
+        /// <param name="ropeAngle">Rope angle from straight down (rad, positive = ahead of the pivot).</param>
+        public static Pose Swing(float t, float ropeVel, float ropeAngle)
+        {
+            float tuck = Mathf.Clamp01(ropeVel / 1.6f) * (1f - Mathf.Clamp01(ropeAngle / 0.5f));
+            float reach = Mathf.Clamp01(ropeAngle / 0.6f);
+            float flutter = 4f * Mathf.Sin(t * 9f);
+            return new Pose
+            {
+                ShoulderL = new Vector3(-176f, 0f, -3f), ShoulderR = new Vector3(-174f, 0f, 3f),
+                ElbowL = new Vector3(-14f, 0f, 0f), ElbowR = new Vector3(-20f, 0f, 0f),
+                ThighL = new Vector3(-20f - 50f * tuck - 40f * reach + flutter, 0f, -3f),
+                ThighR = new Vector3(-28f - 45f * tuck - 35f * reach - flutter, 0f, 3f),
+                KneeL = new Vector3(30f + 60f * tuck - 15f * reach, 0f, 0f),
+                KneeR = new Vector3(42f + 55f * tuck - 10f * reach, 0f, 0f),
+                AnkleL = new Vector3(25f, 0f, 0f), AnkleR = new Vector3(20f, 0f, 0f),
+                Spine = new Vector3(-8f + 14f * tuck, 0f, 0f),
+                // The body hangs along the rope; tip the head back by part of that to keep looking ahead.
+                Neck = new Vector3(ropeAngle * Mathf.Rad2Deg * 0.5f - 6f, 0f, 0f),
+                BodyY = 0f
+            };
+        }
+
         public static Pose Idle(float t)
         {
             float breath = Mathf.Sin(t * 1.6f);

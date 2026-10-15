@@ -307,6 +307,7 @@ namespace JungleEscape
 
             d["monkey_chatter"] = Variants(2, i => Chatter(r));
             d["monkey_shriek"] = One(Shriek(r));
+            d["tarzan"] = One(TarzanYell(r));
             d["roar"] = Variants(2, i => Roar(r, 1f + i * 0.1f));
             d["trumpet"] = One(Trumpet(r));
             d["groan"] = One(Groan(r));
@@ -546,6 +547,22 @@ namespace JungleEscape
             var b = Synth.Buffer(0.8f);
             Synth.Voice(b, 0f, 0.75f, u => 1300f + 700f * Mathf.Sin(Mathf.PI * u) - 300f * u, 0.8f, 0.35f, 45f, 0.25f, 0.6f, r, 6);
             return Synth.Master(b, 0.7f);
+        }
+
+        static float[] TarzanYell(Synth.Rng r)
+        {
+            // The jungle yell: a long, rising holler that breaks into a yodel, flipping between chest and
+            // head voice, and trails off.
+            var b = Synth.Buffer(2.1f);
+            Synth.Voice(b, 0f, 2f, u =>
+            {
+                float baseF = Mathf.Lerp(250f, 300f, Mathf.Clamp01(u * 4f));
+                if (u < 0.22f) return baseF * (1f + 0.5f * u / 0.22f);                     // the rising "aaa"
+                float flip = Mathf.Repeat((u - 0.22f) * 9f, 1f) < 0.5f ? 1f : 1.68f;          // yodel breaks
+                return baseF * 1.5f * flip * (1f - 0.15f * Mathf.Clamp01((u - 0.8f) * 5f));
+            }, 0.85f, 0.2f, 7f, 0.15f, 0.42f, r, 10);
+            Synth.Reverb(b, 0.35f, 0.82f);
+            return Synth.Master(b, 0.75f);
         }
 
         static float[] Roar(Synth.Rng r, float pitch)

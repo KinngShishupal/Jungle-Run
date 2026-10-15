@@ -15,7 +15,6 @@ namespace JungleEscape
     public class Pickup : MonoBehaviour
     {
         const float MagnetRadius = 10f;
-        const float CollectTime = 0.38f;
 
         public PickupType Type;
 
@@ -33,10 +32,6 @@ namespace JungleEscape
         // Magnet pull: once grabbed, a banana homes in with real velocity (pops up, then curves in and accelerates).
         bool pulled;
         Vector3 vel;
-        // Collect flourish: flies up past the runner's shoulder, spinning and shrinking, then bursts.
-        bool collected;
-        float collectT;
-        Vector3 collectFrom;
 
         void Update()
         {
@@ -44,7 +39,6 @@ namespace JungleEscape
             float t = Time.time;
             var gm = GameManager.I;
 
-            if (collected) { CollectFlight(gm, dt); return; }
 
             if (Type != PickupType.Banana)
             {
@@ -107,44 +101,13 @@ namespace JungleEscape
             if (d < 0.7f) Collect();
         }
 
-        void CollectFlight(GameManager gm, float dt)
-        {
-            collectT += dt / CollectTime;
-            float u = Mathf.Clamp01(collectT);
-            float e = 1f - (1f - u) * (1f - u); // ease out
-            // Follow the runner so the banana doesn't get left behind at full sprint.
-            Vector3 anchor = gm != null && gm.Player != null ? gm.Player.transform.position : transform.position - collectFrom;
-            Vector3 end = new Vector3(0f, 2.6f, 0f);
-            Vector3 p = Vector3.Lerp(collectFrom, end, e) + Vector3.up * (1.2f * Mathf.Sin(u * Mathf.PI));
-            transform.position = anchor + p;
-            spin += 1100f * dt;
-            visual.localRotation = Quaternion.Euler(0f, spin, 25f);
-            float s = u < 0.25f ? Mathf.Lerp(1f, 1.35f, u / 0.25f) : Mathf.Lerp(1.35f, 0f, (u - 0.25f) / 0.75f);
-            visual.localScale = Vector3.one * s;
-            if (halo != null) halo.localScale = Vector3.one * (1f + u);
-            if (u >= 1f)
-            {
-                Fx.Sparkle(visual.position, glow, 8);
-                gameObject.SetActive(false);
-            }
-        }
-
         public void Collect()
         {
-            if (!gameObject.activeSelf || collected) return;
+            if (!gameObject.activeSelf) return;
             GameManager.I.OnPickup(this);
-            if (Type != PickupType.Banana)
-            {
-                Fx.Sparkle(visual.position, glow, 24);
-                gameObject.SetActive(false);
-                return;
-            }
-            collected = true;
-            if (col != null) col.enabled = false;
-            if (shadow != null) shadow.gameObject.SetActive(false);
-            var gm = GameManager.I;
-            collectFrom = gm != null && gm.Player != null ? transform.position - gm.Player.transform.position : Vector3.zero;
-            Fx.Sparkle(visual.position, glow, 4);
+            // Money just disappears with a tiny glint; power-ups get a fuller sparkle.
+            Fx.Sparkle(visual.position, glow, Type == PickupType.Banana ? 3 : 24);
+            gameObject.SetActive(false);
         }
 
         // ---------------- Factory ----------------

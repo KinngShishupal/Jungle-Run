@@ -22,6 +22,8 @@ namespace JungleEscape
 
         // River crossing span inside a chunk (local metres) and cave span.
         const float RiverA = 17.5f, RiverB = 30f;
+        // A ravine across the trail (jungle): swing over it on a vine, or fall in
+        const float DitchA = 20f, DitchB = 32.5f, DitchDepth = 9f;
         const float CaveA = 6f, CaveB = 44f;
         const float WaterLevel = -1.35f;
         const float SeaLevel = -0.45f;          // water world sea surface, just below the boardwalk
@@ -35,7 +37,7 @@ namespace JungleEscape
         // Lane contents for a row
         const int Empty = -1;
 
-        enum Feature { None, River, Cave, RockyPass }
+        enum Feature { None, River, Cave, RockyPass, Ditch }
 
         struct Span { public float S0, S1; }
 
@@ -51,6 +53,7 @@ namespace JungleEscape
         }
 
         static readonly List<Span> rivers = new List<Span>();
+        static readonly List<Span> ditches = new List<Span>();
 
         readonly List<GameObject> chunks = new List<GameObject>();
         readonly List<float> chunkStarts = new List<float>();
@@ -95,6 +98,7 @@ namespace JungleEscape
             chunks.Clear();
             chunkStarts.Clear();
             rivers.Clear();
+            ditches.Clear();
             TrackPath.Reset(Random.Range(1, int.MaxValue));
             var startWorld = Biomes.StartWorld;
             Biomes.ResetTo(startWorld);
@@ -125,6 +129,7 @@ namespace JungleEscape
                 chunkStarts.RemoveAt(i);
             }
             while (rivers.Count > 0 && rivers[0].S1 < ps - 120f) rivers.RemoveAt(0);
+            while (ditches.Count > 0 && ditches[0].S1 < ps - 120f) ditches.RemoveAt(0);
 
             // Flowing water (and lava, and drifting ice)
             float t = Time.time;
@@ -226,7 +231,7 @@ namespace JungleEscape
         {
             if (chunkIndex < 2) return Feature.None;
             float r = Random.value;
-            var f = r < 0.16f ? Feature.River : r < 0.30f ? Feature.Cave : r < 0.46f ? Feature.RockyPass : Feature.None;
+            var f = r < 0.16f ? Feature.River : r < 0.30f ? Feature.Cave : r < 0.46f ? Feature.RockyPass : r < 0.62f ? Feature.Ditch : Feature.None;
             return f == lastFeature ? Feature.None : f;
         }
 
@@ -236,13 +241,16 @@ namespace JungleEscape
             bool nearFork = s0 < c.ForkS + ForkLength;
             var feature = nearFork ? Feature.None : PickFeature();
             if (c.Biome == BiomeType.WaterWorld && feature == Feature.River) feature = Feature.None; // all water already
+            if (feature == Feature.Ditch && c.Biome != BiomeType.Jungle) feature = Feature.None;   // the swing vines are jungle only
             if (feature == Feature.River) rivers.Add(new Span { S0 = s0 + RiverA, S1 = s0 + RiverB });
+            if (feature == Feature.Ditch) ditches.Add(new Span { S0 = s0 + DitchA, S1 = s0 + DitchB });
 
             TrackPath.Use(c.Path);
             var chunk = new GameObject("Chunk " + c.Biome + " " + feature);
             chunk.transform.SetParent(transform, false);
             trailLift = nearFork && c.InnerSide > 0 ? 0.012f : 0f;
             BuildScenery(chunk.transform, s0, feature, c.Biome, nearFork ? c.InnerSide : 0);
+            if (feature == Feature.Ditch) SpawnDitchVines(chunk.transform, s0, c.Biome);   // swing across the ravine
 
             float end = s0 + ChunkLength;
             while (c.NextRow < end)
@@ -262,7 +270,110 @@ namespace JungleEscape
         static bool OnBridge(float s)
         {
             foreach (var r in rivers) if (s > r.S0 - 4f && s < r.S1 + 4f) return true;
+            // Keep the run-up to a ravine clear, so the runner can line up and jump for a vine
+            foreach (var r in ditches) if (s > r.S0 - 14f && s < r.S1 + 5f) return true;
             return false;
+        }
+
+        /// <summary>True over a ravine (the trail has a gap here).</summary>
+        public static bool InDitch(float s)
+        {
+            foreach (var r in ditches) if (s > r.S0 + 0.2f && s < r.S1 - 0.2f) return true;
+            return false;
+        }
+
+        /// <summary>How far across a ravine s is (0 at the near edge, 1 at the far edge), or -1 if not over one.</summary>
+        public static float DitchProgress(float s)
+        {
+            foreach (var r in ditches) if (s > r.S0 && s < r.S1) return (s - r.S0) / (r.S1 - r.S0);
+            return -1f;
+        }
+
+        /// <summary>Where the trail resumes on the far side of the ravine at <paramref name="s"/> (or s itself).</summary>
+        public static float DitchFarEdge(float s)
+        {
+            foreach (var r in ditches) if (s > r.S0 - 1f && s < r.S1 + 1f) return r.S1;
+            return s;
+        }
+
+        /// <summary>Three vines (one per lane) hanging just over the near edge, and a line of money tracing a swing.</summary>
+        void SpawnDitchVines(Transform parent, float s0, BiomeType biome)
+        {
+            float pivot = s0 + DitchA - 0.4f;
+            for (int lane = -1; lane <= 1; lane++)
+                VineSwing.Spawn(parent, pivot, lane * PlayerController.LaneWidth, lane == 0);
+            const float R = VineSwing.Length;
+            for (int i = 0; i < 7; i++)
+            {
+                float a = Mathf.Lerp(-0.25f, 0.68f, i / 6f);
+                float handS = pivot + R * Mathf.Sin(a), handH = VineSwing.PivotHeight - R * Mathf.Cos(a);
+                Pickup.Create(PickupType.Banana, new Vector3(0f, handH - ExplorerRig.GripPoint.y + 0.6f, handS - ExplorerRig.GripPoint.z), parent, biome);
+            }
+        }
+
+        /// <summary>
+        /// The ravine where the trail is cut: rock walls under both edges, a rocky floor with a stream far below,
+        /// boulders on the bottom, stones on the lips and roots dangling over the drop.
+        /// </summary>
+        void BuildRavine(ChunkBuilder b, Transform c, float s0, OwnedMeshes owned)
+        {
+            const float W = 6.2f, D = DitchDepth;
+            var verts = new List<Vector3>();
+            var norms = new List<Vector3>();
+            var uvs = new List<Vector2>();
+            var tris = new List<int>();
+            void Quad(Vector3 a, Vector3 bb, Vector3 cc, Vector3 d, Vector3 n)
+            {
+                int i = verts.Count;
+                verts.Add(a); verts.Add(bb); verts.Add(cc); verts.Add(d);
+                for (int k = 0; k < 4; k++) norms.Add(n);
+                uvs.Add(new Vector2(a.x, a.y + a.z) / 3f); uvs.Add(new Vector2(bb.x, bb.y + bb.z) / 3f);
+                uvs.Add(new Vector2(cc.x, cc.y + cc.z) / 3f); uvs.Add(new Vector2(d.x, d.y + d.z) / 3f);
+                tris.Add(i); tris.Add(i + 2); tris.Add(i + 1);
+                tris.Add(i); tris.Add(i + 3); tris.Add(i + 2);
+            }
+            // Subdivide each face so it follows the curve of the trail when deformed
+            for (int k = 0; k < 6; k++)
+            {
+                float x0 = Mathf.Lerp(-W, W, k / 6f), x1 = Mathf.Lerp(-W, W, (k + 1) / 6f);
+                Quad(new Vector3(x0, 0f, DitchA), new Vector3(x1, 0f, DitchA), new Vector3(x1, -D, DitchA), new Vector3(x0, -D, DitchA), Vector3.forward);
+                Quad(new Vector3(x1, 0f, DitchB), new Vector3(x0, 0f, DitchB), new Vector3(x0, -D, DitchB), new Vector3(x1, -D, DitchB), Vector3.back);
+                for (int z = 0; z < 5; z++)
+                {
+                    float z0 = Mathf.Lerp(DitchA, DitchB, z / 5f), z1 = Mathf.Lerp(DitchA, DitchB, (z + 1) / 5f);
+                    Quad(new Vector3(x0, -D, z0), new Vector3(x0, -D, z1), new Vector3(x1, -D, z1), new Vector3(x1, -D, z0), Vector3.up);
+                }
+            }
+            var m = MakeMesh("Ravine", verts, norms, uvs, tris);
+            TrackPath.Deform(m, s0);
+            owned.Meshes.Add(m);
+            Prim.Shape(m, "Ravine", c, Vector3.zero, Vector3.one, Biomes.Remap(Mats.CaveRock, chunkBiome), null, false);
+
+            // A stream far below
+            var water = WaterMesh(s0, DitchA - 1.5f, DitchB + 1.5f, -D + 0.5f);
+            TrackPath.Deform(water, s0);
+            owned.Meshes.Add(water);
+            Prim.Shape(water, "RavineStream", c, Vector3.zero, Vector3.one, Biomes.Remap(Mats.Water, chunkBiome), null, false);
+
+            // Boulders on the floor, stones along both lips, roots dangling over the drop
+            for (int i = 0; i < 8; i++)
+                b.Add(Flora.Rock(i), new Vector3(Random.Range(-5f, 5f), -D + 0.2f, Random.Range(DitchA + 1f, DitchB - 1f)), Random.Range(0f, 360f), Random.Range(0.8f, 2f));
+            for (int side = 0; side < 2; side++)
+            {
+                float z = side == 0 ? DitchA - 0.25f : DitchB + 0.25f;
+                for (int i = 0; i < 4; i++)
+                {
+                    float x = (i % 2 == 0 ? -1f : 1f) * Random.Range(3.6f, 5f);
+                    b.Add(Flora.Rock(i + side), new Vector3(x, -0.15f, z + Random.Range(-0.3f, 0.3f)), Random.Range(0f, 360f), Random.Range(0.35f, 0.6f));
+                }
+                for (int i = 0; i < 7; i++)
+                {
+                    float x = Random.Range(-5.5f, 5.5f), len = Random.Range(1.5f, 4f);
+                    float dz = side == 0 ? 0.15f : -0.15f;
+                    var root = new List<Vector3> { new Vector3(x, 0f, z - dz), new Vector3(x + 0.1f, -len * 0.5f, z + dz), new Vector3(x - 0.05f, -len, z + dz * 1.5f) };
+                    b.Add(Meshes.Sweep(root, (u, a) => Mathf.Lerp(0.05f, 0.015f, u), 5, 1f, 1f), Mats.Vine, Matrix4x4.identity, false);
+                }
+            }
         }
 
         float Difficulty => GameManager.I != null ? GameManager.I.Difficulty : 0f;
@@ -415,6 +526,13 @@ namespace JungleEscape
                 float d = Mathf.Abs(s - (r.S0 + r.S1) * 0.5f);
                 h = Mathf.Lerp(h, -2.6f, Tex.SS(half + 3f, half - 0.5f, d));
             }
+            foreach (var r in ditches)
+            {
+                // Sheer ravine walls: the ground falls away within about a metre of the edge
+                float half = (r.S1 - r.S0) * 0.5f;
+                float d = Mathf.Abs(s - (r.S0 + r.S1) * 0.5f);
+                h = Mathf.Lerp(h, -DitchDepth, Tex.SS(half + 0.9f, half - 0.2f, d));
+            }
             return h;
         }
 
@@ -427,10 +545,11 @@ namespace JungleEscape
             // In the water world the land sinks: only sandbars and islands break the surface.
             groundDrop = biome == BiomeType.WaterWorld ? 1.4f : 0f;
             bool river = feature == Feature.River;
-            riverLocalA = river ? RiverA : -100f;
-            riverLocalB = river ? RiverB : -100f;
+            bool ditch = feature == Feature.Ditch;
+            riverLocalA = river ? RiverA : ditch ? DitchA : -100f;
+            riverLocalB = river ? RiverB : ditch ? DitchB : -100f;
 
-            var trail = TrailMesh(s0, river);
+            var trail = TrailMesh(s0, river, ditch);
             TrackPath.Deform(trail, s0);
             owned.Meshes.Add(trail);
             Prim.Shape(trail, "Trail", c, new Vector3(0f, trailLift, 0f), Vector3.one, Biomes.Remap(Mats.Trail, biome), null, false);
@@ -487,6 +606,7 @@ namespace JungleEscape
                 BuildSea(b, c, s0, owned, skipSide);
                 if (feature != Feature.Cave) SeaAnimals(c, s0, skipSide);
             }
+            if (feature == Feature.Ditch) BuildRavine(b, c, s0, owned);
             if (feature == Feature.Cave) BuildCave(b, c, s0, owned);
             else
             {
@@ -1158,7 +1278,7 @@ namespace JungleEscape
 
         // ---------------- Ground meshes ----------------
 
-        static Mesh TrailMesh(float s0, bool riverGap)
+        static Mesh TrailMesh(float s0, bool riverGap, bool ditchGap)
         {
             const int cols = 11;
             const float step = 2.5f;
@@ -1181,6 +1301,7 @@ namespace JungleEscape
             {
                 float mid = (i + 0.5f) * step;
                 if (riverGap && mid > RiverA && mid < RiverB) continue; // the bridge spans this gap
+                if (ditchGap && mid > DitchA && mid < DitchB) continue;  // the ravine
                 for (int j = 0; j < cols - 1; j++)
                 {
                     int a = i * cols + j, b = a + 1, c = a + cols, d = c + 1;
