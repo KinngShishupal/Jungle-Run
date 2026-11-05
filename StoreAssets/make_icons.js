@@ -168,8 +168,6 @@ function render(name, markup, w, h, outDir) {
 }
 
 // Unity (it scales these down to every density itself)
-render('icon_legacy', clipped(512, '<rect width="512" height="512" rx="92"/>'), 512, 512, iconDir);
-render('icon_round', clipped(512, '<circle cx="256" cy="256" r="256"/>'), 512, 512, iconDir);
 render('icon_adaptive_background', adaptiveBg(432), 432, 432, iconDir);
 render('icon_adaptive_foreground', adaptiveFg(432), 432, 432, iconDir);
 render('icon_default', full(1024), 1024, 1024, iconDir);

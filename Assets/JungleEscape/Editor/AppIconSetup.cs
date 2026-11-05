@@ -9,8 +9,8 @@ namespace JungleEscape.EditorTools
     /// <summary>
     /// Sets the app icons from Assets/JungleEscape/Icons:
     ///  - import settings suited to icons (uncompressed, no mipmaps, alpha kept);
-    ///  - the default icon and Android's adaptive (background + foreground), round and legacy icons
-    ///    in Player Settings. Unity scales each texture down to every screen density itself.
+    ///  - the default icon and Android's adaptive icon (background + foreground) in Player Settings.
+    ///    Unity scales each texture down to every screen density itself.
     /// Runs automatically whenever the icon PNGs are (re)imported; also under Jungle Escape &gt; Apply App Icons.
     /// </summary>
     class AppIconSetup : AssetPostprocessor
@@ -34,24 +34,28 @@ namespace JungleEscape.EditorTools
             if (imported.Any(p => p.StartsWith(Dir))) EditorApplication.delayCall += Apply;
         }
 
+        /// <summary>After a recompile, fill in the icons if they're still empty.</summary>
+        [InitializeOnLoadMethod]
+        static void ApplyIfMissing()
+        {
+            var current = PlayerSettings.GetIcons(NamedBuildTarget.Unknown, IconKind.Any);
+            if (current.Length == 0 || current[0] == null) EditorApplication.delayCall += Apply;
+        }
+
         [MenuItem("Jungle Escape/Apply App Icons")]
         static void Apply()
         {
-            var legacy = Load("icon_legacy");
-            var round = Load("icon_round");
             var bg = Load("icon_adaptive_background");
             var fg = Load("icon_adaptive_foreground");
             var def = Load("icon_default");
-            if (legacy == null || round == null || bg == null || fg == null || def == null) return;
+            if (bg == null || fg == null || def == null) return;
 
             PlayerSettings.SetIcons(NamedBuildTarget.Unknown, new[] { def }, IconKind.Any);
 
-            var android = NamedBuildTarget.Android;
-            Set(android, AndroidPlatformIconKind.Adaptive, bg, fg);
-            Set(android, AndroidPlatformIconKind.Round, round);
-            Set(android, AndroidPlatformIconKind.Legacy, legacy);
+            // Unity 6.6+ builds Android's round and legacy launcher icons from the adaptive layers.
+            Set(NamedBuildTarget.Android, AndroidPlatformIconKind.Adaptive, bg, fg);
             AssetDatabase.SaveAssets();
-            Debug.Log("[Icons] App icons applied (default, Android adaptive, round and legacy).");
+            Debug.Log("[Icons] App icons applied (default + Android adaptive).");
         }
 
         static void Set(NamedBuildTarget target, PlatformIconKind kind, params Texture2D[] layers)
