@@ -775,7 +775,10 @@ PlayerSettings:
   webWasm2023: 1
   webEnableSubmoduleStrippingCompatibility: 0
   webProgressiveAssetLoading: 0
-  scriptingDefineSymbols: {}
+  scriptingDefineSymbols:
+    Android: JE_ADMOB
+    Standalone: JE_ADMOB
+    iPhone: JE_ADMOB
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend:

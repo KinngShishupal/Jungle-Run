@@ -159,12 +159,15 @@ namespace JungleEscape
             }
         }
 
-        /// <summary>Removes obstacles just ahead of the player (used on revive).</summary>
+        /// <summary>Removes obstacles just ahead of the runner on his path (when he gets another chance).</summary>
         public void ClearAhead(float fromS, float length)
         {
             foreach (var c in chunks)
-                foreach (var ob in c.GetComponentsInChildren<Obstacle>())
-                    if (ob.Path == TrackPath.Current && ob.S > fromS - 3f && ob.S < fromS + length) ob.Smash();
+                if (c != null)
+                    foreach (var ob in c.GetComponentsInChildren<Obstacle>())
+                        if (ob.Path == TrackPath.Current && ob.S > fromS - 3f && ob.S < fromS + length) ob.Smash();
+            foreach (var h in FindObjectsByType<WaterHazard>())
+                if (h != null && !h.Hit && h.S > fromS - 3f && h.S < fromS + length) h.gameObject.SetActive(false);
         }
 
         // ---------------- Generation ----------------

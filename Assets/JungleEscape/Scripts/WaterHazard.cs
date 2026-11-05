@@ -19,6 +19,7 @@ namespace JungleEscape
         Transform visual;
 
         public string CrashLine => Type == Kind.Rock ? "Wrecked on the rocks!" : "Rammed a floating log!";
+        public float S => s;
 
         public static WaterHazard Spawn(Transform parent, Kind kind, float s, float x)
         {

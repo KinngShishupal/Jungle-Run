@@ -22,7 +22,6 @@ namespace JungleEscape
         public const int StreakPerLevel = 15;
         public const int MaxMultiplier = 5;
 
-        public const int BaseReviveCost = 50;
 
         public GameState State { get; private set; } = GameState.Menu;
         public float Speed { get; private set; }
@@ -46,8 +45,6 @@ namespace JungleEscape
 
         public int Multiplier => Mathf.Min(1 + Streak / StreakPerLevel, MaxMultiplier);
         public float StreakProgress => (Streak % StreakPerLevel) / (float)StreakPerLevel;
-        public int ReviveCost => BaseReviveCost * (1 << revives); // 50, 100, 200...
-        public bool CanRevive => TotalBananas >= ReviveCost;
 
         /// <summary>0 at start speed, 1 at max speed. Used for spawn difficulty.</summary>
         public float Difficulty => Mathf.InverseLerp(StartSpeed, MaxSpeed, Speed);
@@ -55,7 +52,6 @@ namespace JungleEscape
         float runTime;
         float lastBananaTime;
         int bankedThisRun;
-        int revives;
 
         const string KeyBest = "je_best";
         const string KeyBananas = "je_bananas";
@@ -65,6 +61,7 @@ namespace JungleEscape
             I = this;
             HighScore = PlayerPrefs.GetInt(KeyBest, 0);
             TotalBananas = PlayerPrefs.GetInt(KeyBananas, 0);
+            AdsService.Initialize();   // start loading a rewarded ad early, so one is ready when needed
         }
 
         void Update()
@@ -73,21 +70,6 @@ namespace JungleEscape
             {
                 if (State == GameState.Playing) Pause();
                 else if (State == GameState.Paused) Resume();
-            }
-
-            // Developer shortcut (editor & development builds): keys 1-4 restart in a given world.
-            if (Debug.isDebugBuild)
-            {
-                var kb = UnityEngine.InputSystem.Keyboard.current;
-                if (kb != null)
-                {
-                    BiomeType? pick = kb.digit1Key.wasPressedThisFrame ? BiomeType.Jungle
-                                    : kb.digit2Key.wasPressedThisFrame ? BiomeType.IceAge
-                                    : kb.digit3Key.wasPressedThisFrame ? BiomeType.WaterWorld
-                                    : kb.digit4Key.wasPressedThisFrame ? BiomeType.Desert
-                                    : (BiomeType?)null;
-                    if (pick.HasValue) PlayWorld(pick.Value);
-                }
             }
 
             if (State != GameState.Playing) return;
@@ -112,9 +94,11 @@ namespace JungleEscape
             Score = 0f;
             RunBananas = 0;
             Lives = MaxLives;
+            AdsWatched = 0;
+            UsedAdChance = false;
+            AdMessage = "";
             Streak = 0;
             bankedThisRun = 0;
-            revives = 0;
             NewHighScore = false;
             GameOverReason = "";
 
@@ -123,20 +107,6 @@ namespace JungleEscape
             Monkeys.BeginChase();
             State = GameState.Playing;
             AudioDirector.Play("click");
-        }
-
-        /// <summary>Starts a fresh run directly in a world (for testing a world on its own).</summary>
-        public void PlayWorld(BiomeType world)
-        {
-            Biomes.StartWorld = world;
-            StartRun();
-        }
-
-        /// <summary>Shows a world behind the menu without starting a run.</summary>
-        public void PreviewWorld(BiomeType world)
-        {
-            Biomes.StartWorld = world;
-            GoToMenu();
         }
 
         public void GoToMenu()
@@ -315,20 +285,42 @@ namespace JungleEscape
             Save();
         }
 
-        public void Revive()
-        {
-            if (State != GameState.GameOver || !CanRevive) return;
-            // Hook: you could also offer a rewarded ad here instead of bananas.
-            TotalBananas -= ReviveCost;
-            revives++;
-            Save();
+        // ---------------- An extra chance for watching ads ----------------
 
+        /// <summary>Rewarded ads to watch, back to back, for one more chance (once per run).</summary>
+        public const int AdsForChance = 2;
+        public int AdsWatched { get; private set; }
+        public bool UsedAdChance { get; private set; }
+        /// <summary>Feedback for the caught screen ("one more to go", "ad not ready"...).</summary>
+        public string AdMessage { get; private set; } = "";
+        public bool CanWatchForChance => State == GameState.GameOver && !UsedAdChance;
+
+        public void WatchAdForChance()
+        {
+            if (!CanWatchForChance || AdsService.Showing) return;
+            AdMessage = "";
+            AudioDirector.Play("click");
+            AdsService.ShowRewarded(() =>
+            {
+                AdsWatched++;
+                if (AdsWatched >= AdsForChance) ContinueAfterAds();
+                else AdMessage = "Great! One more ad for your extra chance.";
+            }, msg => AdMessage = msg);
+        }
+
+        /// <summary>Both ads watched: back on his feet with one chance, the way ahead cleared, the monkeys behind.</summary>
+        void ContinueAfterAds()
+        {
+            UsedAdChance = true;
+            AdMessage = "";
+            Player.ContinueRun();
             Track.ClearAhead(Player.TrackS, 45f);
-            Player.Revive();
-            Lives = 1;   // a revive buys one more chance
+            Lives = 1;
             Monkeys.FallBack();
+            Time.timeScale = 1f;
             State = GameState.Playing;
             AudioDirector.Play("powerup", 0.8f);
+            GameUI.Announce("LAST CHANCE!", new Color(1f, 0.45f, 0.35f));
         }
 
         void Save()

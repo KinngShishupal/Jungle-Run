@@ -35,7 +35,6 @@ namespace JungleEscape
         const float RollDuration = 0.75f;
         const float GlideHeight = 5f;
         const float HangLength = 1.35f;       // grip to the body's centre of mass (pendulum length)
-        const float InvulnAfterRevive = 2f;
         const float StandHeight = 1.1f;       // galloping on all fours (head about 1 m up)
         const float RollHeight = 0.8f;
         const float LandDuration = 0.24f;
@@ -730,30 +729,37 @@ namespace JungleEscape
             TrackPath.Place(transform, x, 0f, s);
         }
 
-        /// <summary>Lost a chance but still running: stagger, then a couple of seconds of invulnerability (blinking).</summary>
-        public void ShakeOff()
+        /// <summary>
+        /// Back on his feet after being caught (an extra chance earned by watching ads): standing on the trail
+        /// (past any ravine or open water he fell into), briefly invulnerable, galloping on.
+        /// </summary>
+        public void ContinueRun()
         {
-            stumbleTimer = StumbleDuration;
-            invuln = Mathf.Max(invuln, 2f);
-            human?.Restart(HumanoidCharacter.Clip.Stumble);
-        }
-
-        public void Revive()
-        {
+            float far = TrackGenerator.DitchFarEdge(s);
+            if (far != s) s = far + 1.5f;
             knocked = false;
             y = 0f; vy = 0f;
             grounded = true;
             fastFalling = false;
             rollTimer = 0f;
             power[(int)PickupType.Glider] = 0f;
-            invuln = InvulnAfterRevive;
+            invuln = 2.5f;
             TrackPath.Place(transform, x, 0f, s);
             wAir = wGlide = wSwing = 0f;
             swinging = false; vine = null; vineCooldown = 0f;
+            if (canoe != null) canoe.Release();
             riding = false; canoe = null; wRide = 0f; hopGrace = 0f;
             swimming = false; wSwim = 0f;
             rig.Snap(ExplorerRig.Gallop(runPhase, 0f));
             human?.SnapTo(HumanoidCharacter.Clip.Run);
+        }
+
+        /// <summary>Lost a chance but still running: stagger, then a couple of seconds of invulnerability (blinking).</summary>
+        public void ShakeOff()
+        {
+            stumbleTimer = StumbleDuration;
+            invuln = Mathf.Max(invuln, 2f);
+            human?.Restart(HumanoidCharacter.Clip.Stumble);
         }
 
         // ---------------- Animation ----------------

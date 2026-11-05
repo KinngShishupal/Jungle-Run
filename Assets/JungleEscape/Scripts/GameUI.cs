@@ -14,6 +14,8 @@ namespace JungleEscape
 
         GUIStyle title, big, mid, small, hudLeft, hudRight, button, smallButton, warn, panel, bar, barFill, barGold;
         Texture2D scrimTop, scrimBottom, dimTex, heartFull, heartEmpty;
+        GUIStyle adButton;
+        Texture2D videoIcon;
         bool ready;
 
         static readonly Color Gold = new Color(1f, 0.83f, 0.42f);
@@ -24,6 +26,8 @@ namespace JungleEscape
         {
             var gm = GameManager.I;
             if (gm == null) return;
+            // While an ad is playing it gets the whole screen: draw none of the game's UI over it.
+            if (AdsService.Showing) return;
             if (!ready) Init();
 
             float s = Mathf.Min(Screen.width / RefW, Screen.height / RefH);
@@ -38,37 +42,6 @@ namespace JungleEscape
                 case GameState.GameOver: DrawGameOver(gm, w, h); break;
             }
             if (gm.State == GameState.Playing || gm.State == GameState.Paused) DrawAnnouncement(w, h);
-        }
-
-        // ---------------- Developer world picker ----------------
-
-        static readonly (BiomeType world, string label)[] Worlds =
-        {
-            (BiomeType.Jungle, "Jungle"), (BiomeType.IceAge, "Ice Age"),
-            (BiomeType.WaterWorld, "Water"), (BiomeType.Desert, "Desert")
-        };
-
-        GUIStyle worldButton, worldButtonOn;
-
-        void DrawWorldPicker(GameManager gm, float w, float y)
-        {
-            if (worldButton == null)
-            {
-                worldButton = new GUIStyle(smallButton) { fontSize = 34 };
-                worldButtonOn = new GUIStyle(worldButton);
-                worldButtonOn.normal.background = button.normal.background;
-                worldButtonOn.normal.textColor = Gold;
-            }
-            Shadow(new Rect(0, y, w, 50), "TEST WORLD  (or keys 1-4 while playing)", small, new Color(1f, 1f, 1f, 0.75f));
-            const float bw = 230f, gap = 14f;
-            float x = w / 2f - (Worlds.Length * bw + (Worlds.Length - 1) * gap) / 2f;
-            foreach (var (world, label) in Worlds)
-            {
-                var style = Biomes.StartWorld == world ? worldButtonOn : worldButton;
-                if (GUI.Button(new Rect(x, y + 55f, bw, 90f), label, style) && Biomes.StartWorld != world)
-                    gm.PreviewWorld(world);
-                x += bw + gap;
-            }
         }
 
         // ---------------- New-world announcement ----------------
@@ -127,8 +100,13 @@ namespace JungleEscape
             if (GUI.Button(new Rect(w / 2 - 300, h * 0.60f, 600, 170), "RUN", button)) gm.StartRun();
             SoundToggle(w);
 
-            // Developer world picker (editor & development builds only): choose the world a run starts in.
-            if (Debug.isDebugBuild) DrawWorldPicker(gm, w, h * 0.60f + 195f);
+            // Ad consent can be changed at any time where the law requires it (EEA/UK etc.)
+            if (AdsService.PrivacyOptionsRequired && GUI.Button(new Rect(40, 40, 260, 100), "Privacy", smallButton))
+            {
+                AudioDirector.Play("click");
+                AdsService.ShowPrivacyOptions();
+            }
+
 
             Shadow(new Rect(40, h - 330, w - 80, 300),
                 "Swipe left / right to change lane\nSwipe up to jump logs  ·  Swipe down to roll under branches\n" +
@@ -244,12 +222,37 @@ namespace JungleEscape
             Shadow(new Rect(0, y + 265, w, 60), $"Distance  {Mathf.FloorToInt(gm.Distance)} m", small, Cream);
 
             float by = h * 0.55f;
-            bool prev = GUI.enabled;
-            GUI.enabled = gm.CanRevive;
-            if (GUI.Button(new Rect(w / 2 - 330, by, 660, 150), $"Revive  ·  {gm.ReviveCost} treasure", button)) gm.Revive();
-            GUI.enabled = prev;
-            if (GUI.Button(new Rect(w / 2 - 330, by + 180, 660, 150), "Play again", button)) gm.StartRun();
-            if (GUI.Button(new Rect(w / 2 - 330, by + 360, 660, 150), "Home", button)) gm.GoToMenu();
+            // Watch two ads for one more chance (once per run)
+            if (gm.CanWatchForChance)
+            {
+                string label = AdsService.Showing ? "Playing ad..."
+                             : !AdsService.Ready ? "Loading ad..."
+                             : "Watch ads\nfor an extra chance";
+                if (adButton == null)
+                {
+                    adButton = new GUIStyle(button) { fontSize = 46, wordWrap = true };
+                    adButton.padding = new RectOffset(150, 30, 10, 10);   // room for the video icon on the left
+                    videoIcon = VideoIcon();
+                }
+                bool prev = GUI.enabled;
+                bool ready = !AdsService.Showing && AdsService.Ready;
+                GUI.enabled = ready;
+                var adRect = new Rect(w / 2 - 330, by, 660, 150);
+                if (GUI.Button(adRect, label, adButton)) gm.WatchAdForChance();
+                GUI.enabled = prev;
+                // Video icon, gently pulsing while an ad is ready to watch
+                float pulse = ready ? 1f + 0.06f * Mathf.Sin(Time.unscaledTime * 5f) : 1f;
+                float iw = 100f * pulse, ih = 76f * pulse;
+                var c = GUI.color;
+                GUI.color = ready ? Color.white : new Color(1f, 1f, 1f, 0.45f);
+                GUI.DrawTexture(new Rect(adRect.x + 80f - iw * 0.5f, adRect.y + adRect.height * 0.5f - ih * 0.5f, iw, ih), videoIcon);
+                GUI.color = c;
+                if (!string.IsNullOrEmpty(gm.AdMessage))
+                    Shadow(new Rect(0, by - 70, w, 60), gm.AdMessage, small, Gold);
+                by += 180;
+            }
+            if (GUI.Button(new Rect(w / 2 - 330, by, 660, 150), "Play again", button)) gm.StartRun();
+            if (GUI.Button(new Rect(w / 2 - 330, by + 180, 660, 150), "Home", button)) gm.GoToMenu();
         }
 
         // ---------------- Helpers ----------------
@@ -414,6 +417,44 @@ namespace JungleEscape
                     var col = c;
                     if (filled) col = Color.Lerp(c, Color.white, Mathf.Clamp01((y - 0.3f) * 0.6f) * Mathf.Clamp01(-x * 1.5f)); // a soft highlight
                     col.a = c.a * a;
+                    t.SetPixel(px, py, col);
+                }
+            t.Apply();
+            return t;
+        }
+
+        /// <summary>
+        /// A "video ad" icon: a rounded gold screen with a play triangle cut out of it, anti-aliased, with a
+        /// soft shadow underneath so it reads on the button.
+        /// </summary>
+        static Texture2D VideoIcon()
+        {
+            const int W = 100, H = 76;
+            var t = new Texture2D(W, H, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            var gold = new Color(1f, 0.84f, 0.38f);
+            for (int py = 0; py < H; py++)
+                for (int px = 0; px < W; px++)
+                {
+                    float x = px + 0.5f, y = py + 0.5f;
+                    // Rounded rectangle (the screen), inset to leave room for the shadow
+                    float Box(float ox, float oy)
+                    {
+                        float hx = (W - 14f) * 0.5f, hy = (H - 14f) * 0.5f, r = 14f;
+                        float dx = Mathf.Abs(x - W * 0.5f - ox) - (hx - r), dy = Mathf.Abs(y - H * 0.5f - oy) - (hy - r);
+                        float d = Mathf.Sqrt(Mathf.Max(dx, 0f) * Mathf.Max(dx, 0f) + Mathf.Max(dy, 0f) * Mathf.Max(dy, 0f)) + Mathf.Min(Mathf.Max(dx, dy), 0f) - r;
+                        return Mathf.Clamp01(0.5f - d);
+                    }
+                    float screen = Box(0f, 1.5f);
+                    float shadow = Box(2f, -2.5f) * 0.45f;
+                    // Play triangle pointing right, centred on the screen
+                    float cx = W * 0.5f + 3f, cy = H * 0.5f + 1.5f, s = 17f;
+                    float e1 = (x - (cx - s * 0.6f));                                   // left edge
+                    float e2 = -((y - cy) * 0.866f + (x - (cx + s)) * 0.5f);             // upper-right edge
+                    float e3 = ((y - cy) * 0.866f - (x - (cx + s)) * 0.5f);              // lower-right edge
+                    float tri = Mathf.Clamp01(0.5f + Mathf.Min(e1, Mathf.Min(e2, e3)));
+                    float a = Mathf.Max(screen * (1f - tri), shadow * (1f - screen));
+                    var col = screen > shadow ? Color.Lerp(gold, Color.white, Mathf.Clamp01((y - H * 0.55f) / H) * 0.6f) : Color.black;
+                    col.a = a;
                     t.SetPixel(px, py, col);
                 }
             t.Apply();

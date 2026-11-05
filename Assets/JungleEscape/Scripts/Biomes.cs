@@ -152,8 +152,7 @@ namespace JungleEscape
         }
 
         /// <summary>
-        /// The world a new run starts in. Normally the jungle; developers can pick another one
-        /// (menu buttons or keys 1-4 in the editor / development builds) to test a world directly.
+        /// The world every run starts in: the jungle. Other worlds are reached through forks in the trail.
         /// </summary>
         public static BiomeType StartWorld = BiomeType.Jungle;
 
