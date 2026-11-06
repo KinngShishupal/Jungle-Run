@@ -1,0 +1,2 @@
+E:\UNITY PROJECTS\Jungle Escape\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\src\main\cpp\CMakeLists.txt
+E:\UNITY PROJECTS\Jungle Escape\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\src\main\cpp\GameActivity\CMakeLists.txt
